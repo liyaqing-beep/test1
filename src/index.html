@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Match‑3 — 5x5 Board</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <h1 class="title">Match‑3</h1>
+        <div class="hud">
+          <div class="score">Score: <span id="score">0</span></div>
+          <button id="reset" class="btn">Reset</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <div id="board" class="board" role="grid" aria-label="Match-3 board"></div>
+      </main>
+    </div>
+
+    <!-- Debug UI gets positioned next to the board by JS -->
+    <button id="debug-toggle" class="debug-toggle" style="display:none">Show Debug</button>
+    <button id="debug-clear" class="debug-toggle" style="display:none">Clear Logs</button>
+    <div id="debug-panel" class="debug-panel"></div>
+
+    <script src="main.js" defer></script>
+  </body>
+  </html>
