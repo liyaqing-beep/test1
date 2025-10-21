@@ -18,6 +18,21 @@
   let swapAnimChain = Promise.resolve();
   let reverting = false;
   let activeSwaps = 0; // number of in-flight visual swap animations
+  let animatingCascade = false; // during fall/refill animations
+  const ROW_MS = 60; // per-row fall duration (default)
+  const CLEAR_MS = 320; // fade-out duration
+
+  // Speed configuration for collapse and refill stages
+  const speedConfig = {
+    collapse: {
+      baseRowMs: ROW_MS,
+      inboard_offset_ms: 0, // additive ms/row for y=5->1; collapse only (pre-refill)
+    },
+    refill: {
+      baseRowMs: ROW_MS,
+      above_offset_ms: 0, // additive ms/row for y=10->5 (refill before entering)
+    },
+  };
 
   // Elements
   const boardEl = document.getElementById("board");
@@ -26,6 +41,8 @@
   const debugToggleEl = document.getElementById("debug-toggle");
   const debugClearEl = document.getElementById("debug-clear");
   const debugPanelEl = document.getElementById("debug-panel");
+  const timingPanelEl = document.getElementById("timing-panel");
+  const timingToggleEl = document.getElementById("timing-toggle");
   let debugEnabled = false;
   let debugActionCount = 0;
 
@@ -39,6 +56,7 @@
   draw();
   updateScore(0);
   setupDebugUI();
+  setupTimingPanel();
 
   // Events
   resetBtn.addEventListener("click", () => {
@@ -58,6 +76,9 @@
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("resize", positionDebugUI);
   window.addEventListener("scroll", positionDebugUI, { passive: true });
+  window.addEventListener("resize", positionTimingPanel);
+  window.addEventListener("scroll", positionTimingPanel, { passive: true });
+  
 
   // --- UI construction ---
   function buildGrid() {
@@ -124,9 +145,104 @@
     debugPanelEl.style.top = Math.round(top + toggleHeight + 8) + "px";
   }
 
+  // --- Timing Panel ---
+  function setupTimingPanel() {
+    if (!timingPanelEl) return;
+    timingPanelEl.innerHTML = buildTimingPanelHtml();
+    const applyBtn = timingPanelEl.querySelector('#timing-apply');
+    const resetBtn = timingPanelEl.querySelector('#timing-reset');
+    if (applyBtn) applyBtn.addEventListener('click', applyTimingFromUI);
+    if (resetBtn) resetBtn.addEventListener('click', () => { resetTimingToDefault(); renderTimingToUI(); });
+    renderTimingToUI();
+    // Toggle setup
+    if (timingToggleEl) {
+      timingToggleEl.style.display = 'block';
+      let visible = false;
+      timingPanelEl.style.display = 'none';
+      timingToggleEl.textContent = 'Show Panel';
+      timingToggleEl.addEventListener('click', () => {
+        visible = !visible;
+        timingPanelEl.style.display = visible ? 'block' : 'none';
+        timingToggleEl.textContent = visible ? 'Hide Panel' : 'Show Panel';
+        positionTimingPanel();
+      });
+    }
+    positionTimingPanel();
+  }
+
+  function buildTimingPanelHtml() {
+    const baseInput = (prefix, label) => `<div class=\"grid\"><label>${label} Base ms/row</label><input id=\"${prefix}-base\" type=\"number\" min=\"10\" max=\"1000\" step=\"10\"></div>`;
+    return `
+      <div class=\"section\">
+        <h3>Panel 1 — Falling speed (above the playboard)</h3>
+        <div class=\"grid\"><label>Above-board offset (ms/row)</label><input id=\"above-offset\" type=\"number\" min=\"-500\" max=\"500\" step=\"5\"></div>
+        ${baseInput('refill', 'Refill')}
+      </div>
+      <div class=\"section\">
+        <h3>Panel 2 — Collapse speed (within the playboard)</h3>
+        <div class=\"small\">Only affects collapse (pre-refill) from row 5 to row 1.</div>
+        <div class=\"grid\"><label>Collapse offset (ms/row)</label><input id=\"inboard-offset\" type=\"number\" min=\"-500\" max=\"500\" step=\"5\"></div>
+        ${baseInput('collapse', 'Collapse')}
+      </div>
+      <div class=\"actions\">
+        <button id=\"timing-reset\" class=\"btn\" type=\"button\">Reset</button>
+        <button id=\"timing-apply\" class=\"btn\" type=\"button\">Apply</button>
+      </div>
+    `;
+  }
+
+  function renderTimingToUI() {
+    if (!timingPanelEl) return;
+    const write = (id, v) => { const el = timingPanelEl.querySelector(`#${id}`); if (el) el.value = String(v); };
+    write('collapse-base', speedConfig.collapse.baseRowMs);
+    write('refill-base', speedConfig.refill.baseRowMs);
+    write('above-offset', speedConfig.refill.above_offset_ms);
+    write('inboard-offset', speedConfig.collapse.inboard_offset_ms);
+  }
+
+  function applyTimingFromUI() {
+    if (!timingPanelEl) return;
+    const readNum = (id, fallback) => {
+      const el = timingPanelEl.querySelector(`#${id}`);
+      const v = el ? parseFloat(el.value) : NaN;
+      return Number.isFinite(v) ? v : fallback;
+    };
+    speedConfig.collapse.baseRowMs = Math.max(10, readNum('collapse-base', ROW_MS));
+    speedConfig.refill.baseRowMs = Math.max(10, readNum('refill-base', ROW_MS));
+    speedConfig.refill.above_offset_ms = Math.max(-500, Math.min(500, readNum('above-offset', 0)));
+    speedConfig.collapse.inboard_offset_ms = Math.max(-500, Math.min(500, readNum('inboard-offset', 0)));
+  }
+
+  function resetTimingToDefault() {
+    speedConfig.collapse.baseRowMs = ROW_MS;
+    speedConfig.refill.baseRowMs = ROW_MS;
+    speedConfig.refill.above_offset_ms = 0;
+    speedConfig.collapse.inboard_offset_ms = 0;
+  }
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function positionTimingPanel() {
+    if (!timingPanelEl) return;
+    const rect = boardEl.getBoundingClientRect();
+    const margin = 16;
+    const top = Math.max(8, Math.round(rect.top));
+    const toggleW = timingToggleEl ? (timingToggleEl.offsetWidth || 110) : 110;
+    let toggleLeft = Math.max(8, Math.round(rect.left - margin - toggleW));
+    if (timingToggleEl) {
+      timingToggleEl.style.left = toggleLeft + 'px';
+      timingToggleEl.style.top = top + 'px';
+    }
+    const toggleHeight = 36;
+    const panelW = timingPanelEl.offsetWidth || 320;
+    const panelLeft = Math.max(8, Math.round(rect.left - margin - panelW));
+    timingPanelEl.style.left = panelLeft + 'px';
+    timingPanelEl.style.top = Math.round(top + toggleHeight + 8) + 'px';
+  }
+
   // --- Input handlers ---
   function onPointerDown(e) {
-    if (reverting) return;
+    if (reverting || animatingCascade) return;
     const tile = e.target.closest(".tile");
     if (!tile) return;
     e.preventDefault();
@@ -186,7 +302,7 @@
     updateGlowPreview();
   }
 
-  function onPointerUp() {
+  async function onPointerUp() {
     if (!dragging) return;
     dragging = false;
     boardEl.classList.remove("dragging");
@@ -194,7 +310,7 @@
     clearGlowPreview();
 
     // Check for any matches
-    const anyCleared = resolveMatchesAndCascades();
+    const anyCleared = await resolveMatchesAndCascades();
     if (anyCleared === 0) {
       // No match -> visually roll back along the path
       reverting = true;
@@ -316,49 +432,216 @@
     return matches;
   }
 
-  function resolveMatchesAndCascades() {
+  async function resolveMatchesAndCascades() {
     let totalCleared = 0;
-    let localActionCount = 0;
-    while (true) {
-      const matches = findMatches(board);
-      if (matches.length === 0) break;
-      const boardBefore = debugEnabled ? cloneBoard(board) : null;
-      const toClear = expandConnectedSameColor(board, matches);
-      totalCleared += toClear.length;
+    animatingCascade = true;
+    try {
+      // Ensure queued swap animations finished
+      await swapAnimChain.catch(() => {});
+      while (true) {
+        const matches = findMatches(board);
+        if (matches.length === 0) break;
 
-      for (const { r, c } of toClear) {
-        board[r][c] = null;
-      }
-      const boardAfterClear = debugEnabled ? cloneBoard(board) : null;
+        const toClear = expandConnectedSameColor(board, matches);
+        totalCleared += toClear.length;
 
-      // Collapse per column and refill
-      for (let c = 0; c < SIZE; c++) {
-        const col = [];
-        for (let r = SIZE - 1; r >= 0; r--) {
-          const v = board[r][c];
-          if (v !== null && v !== undefined) col.push(v);
+        const boardBefore = debugEnabled ? cloneBoard(board) : null;
+
+        // Fade out matched tiles (fixed duration/easing)
+        for (const { r, c } of toClear) {
+          const el = tileEls[r][c];
+          if (el) el.classList.add("clearing");
         }
-        let idx = 0;
-        for (let r = SIZE - 1; r >= 0; r--) {
-          if (idx < col.length) {
-            board[r][c] = col[idx++];
-          } else {
-            board[r][c] = rngTile();
-          }
+        await new Promise((res) => setTimeout(res, CLEAR_MS));
+        for (const { r, c } of toClear) {
+          const el = tileEls[r][c];
+          if (el) el.classList.remove("clearing");
+        }
+
+        // Snapshot board after clear (without mutating original yet)
+        const snapshot = board.map((row) => row.slice());
+        for (const { r, c } of toClear) snapshot[r][c] = null;
+        const boardAfterClear = debugEnabled ? cloneBoard(snapshot) : null;
+
+        // Compute gravity plan
+        const plan = computeGravityPlan(snapshot);
+
+        // Set actual board to cleared snapshot (underlay), then animate overlay fall/refill
+        board = snapshot;
+        draw();
+        await animateFallAndRefill(plan, snapshot);
+
+        // Commit next board
+        board = plan.nextBoard;
+        draw();
+
+        if (debugEnabled) {
+          const boardAfterCollapse = cloneBoard(board);
+          logDebugAction(++debugActionCount, matches, toClear, boardBefore, boardAfterClear, boardAfterCollapse);
         }
       }
-
-      if (debugEnabled) {
-        const boardAfterCollapse = cloneBoard(board);
-        logDebugAction(++debugActionCount, matches, toClear, boardBefore, boardAfterClear, boardAfterCollapse);
-      }
-      localActionCount++;
+    } finally {
+      animatingCascade = false;
     }
-
     if (totalCleared > 0) updateScore(score + totalCleared * 10);
     draw();
     return totalCleared;
   }
+
+  function measureRowDistance() {
+    const gapStr = getComputedStyle(boardEl).rowGap || getComputedStyle(boardEl).gap || "0";
+    const gap = parseFloat(gapStr) || 0;
+    const t = tileEls[0] && tileEls[0][0] ? tileEls[0][0].getBoundingClientRect().height : 0;
+    return t + gap;
+  }
+
+  function cellRect(r, c) {
+    const br = boardEl.getBoundingClientRect();
+    const el = tileEls[r][c];
+    const rr = el.getBoundingClientRect();
+    return { left: rr.left - br.left, top: rr.top - br.top, width: rr.width, height: rr.height };
+  }
+
+  function computeGravityPlan(snapshot) {
+    const n = SIZE;
+    const next = Array.from({ length: n }, () => Array(n).fill(null));
+    const survivors = [];
+    const spawns = [];
+    for (let c = 0; c < n; c++) {
+      const nonNull = [];
+      for (let r = n - 1; r >= 0; r--) {
+        const v = snapshot[r][c];
+        if (v !== null && v !== undefined) nonNull.push({ v, fromR: r });
+      }
+      let write = n - 1;
+      for (const item of nonNull) {
+        next[write][c] = item.v;
+        const rows = write - item.fromR;
+        if (rows > 0) survivors.push({ from: { r: item.fromR, c }, to: { r: write, c }, rows });
+        write--;
+      }
+      for (let r = write; r >= 0; r--) {
+        const color = rngTile();
+        next[r][c] = color;
+        spawns.push({ to: { r, c }, rowsFromTop: r + 1, color });
+      }
+    }
+    return { nextBoard: next, survivors, spawns };
+  }
+
+  async function animateFallAndRefill(plan, snapshot) {
+    const rowPx = measureRowDistance();
+    const overlay = document.createElement("div");
+    overlay.className = "fall-overlay";
+    boardEl.appendChild(overlay);
+
+    // Row-ordered start (bottom earliest) and synchronized landing
+    const collapseBase = speedConfig.collapse.baseRowMs || ROW_MS;
+    const refillBase = speedConfig.refill.baseRowMs || ROW_MS;
+    const waveBaseMs = Math.max(collapseBase, refillBase);
+    const ALPHA = 0.35 * waveBaseMs; // per-rank stagger (ms)
+    const MIN_DUR = 40; // lower bound for an individual fall duration
+
+    // Compute common end time across all fallers (survivors + spawns),
+    // factoring in row-based start offsets so columns share the same schedule per row.
+    let T_end = 0;
+    for (const s of plan.survivors) {
+      const factor = 1;
+      const perRowInside = Math.max(10, (collapseBase / Math.max(0.1, factor)) + (speedConfig.collapse.inboard_offset_ms || 0));
+      const baseDur = Math.max(perRowInside * s.rows, MIN_DUR);
+      const rank = (SIZE - 1) - s.to.r; // bottom earliest
+      const tStart = ALPHA * rank;
+      const candidateEnd = baseDur + tStart;
+      if (candidateEnd > T_end) T_end = candidateEnd;
+    }
+    for (const sp of plan.spawns) {
+      const factorIn = 1;
+      const colF = 1;
+      const y_to = SIZE - sp.to.r;
+      const rowsAbove = 10 - 5;
+      const rowsIn = Math.max(0, 5 - y_to);
+      const perRowAbove = Math.max(10, (refillBase / colF) + (speedConfig.refill.above_offset_ms || 0));
+      const perRowInside = Math.max(10, (refillBase / Math.max(0.1, factorIn)) + 0);
+      const baseDur = Math.max(rowsAbove * perRowAbove + rowsIn * perRowInside, MIN_DUR);
+      const rank = (SIZE - 1) - sp.to.r; // bottom earliest
+      const tStart = ALPHA * rank;
+      const candidateEnd = baseDur + tStart;
+      if (candidateEnd > T_end) T_end = candidateEnd;
+    }
+
+    const survivorsAnims = [];
+    const hidden = [];
+    for (const s of plan.survivors) {
+      const from = cellRect(s.from.r, s.from.c);
+      const colorIdx = snapshot[s.from.r][s.from.c];
+      const color = COLOR_NAMES[colorIdx];
+      if (color == null) continue;
+      const clone = document.createElement("div");
+      clone.className = `tile ${color} fall-clone`;
+      clone.style.left = `${from.left}px`;
+      clone.style.top = `${from.top}px`;
+      clone.style.width = `${from.width}px`;
+      clone.style.height = `${from.height}px`;
+      clone.style.zIndex = String(100 + s.to.r);
+      overlay.appendChild(clone);
+      const elFrom = tileEls[s.from.r][s.from.c];
+      if (elFrom) { incHide(elFrom); hidden.push(elFrom); }
+      const distance = (s.to.r - s.from.r) * rowPx;
+      const factor = Math.max(0.1, computeCollapseFactor(s.from.r, s.to.r, s.to.c));
+      const perRowInside = Math.max(10, (collapseBase / factor) + (speedConfig.collapse.inboard_offset_ms || 0));
+      const baseDur = Math.max(perRowInside * s.rows, MIN_DUR);
+      const rank = (SIZE - 1) - s.to.r; // bottom row=0 (earliest)
+      const tStart = ALPHA * rank;
+      const collapseDelay = tStart;
+      const collapseDuration = Math.max(T_end - tStart, MIN_DUR);
+      const a = clone.animate([
+        { transform: 'translate3d(0, 0, 0)' },
+        { transform: `translate3d(0, ${distance}px, 0)` }
+      ], { duration: collapseDuration, delay: collapseDelay, easing: 'ease-in-out', fill: 'forwards' });
+      survivorsAnims.push(a.finished.catch(() => {}));
+    }
+    // Spawns animate concurrently with per-row duration
+    const spawnsAnims = [];
+    for (const sp of plan.spawns) {
+      const to = cellRect(sp.to.r, sp.to.c);
+      const clone = document.createElement("div");
+      const color = COLOR_NAMES[sp.color];
+      clone.className = `tile ${color} fall-clone`;
+      clone.style.left = `${to.left}px`;
+      const startY = 10;
+      const y_to = SIZE - sp.to.r;
+      const deltaRows = Math.max(0, startY - y_to);
+      clone.style.top = `${to.top - deltaRows * rowPx}px`;
+      clone.style.width = `${to.width}px`;
+      clone.style.height = `${to.height}px`;
+      clone.style.zIndex = String(100 + sp.to.r);
+      overlay.appendChild(clone);
+      const factorIn = 1;
+      const colF = 1;
+      const rowsAbove = 10 - 5;
+      const rowsIn = Math.max(0, 5 - y_to);
+      const perRowAbove = Math.max(10, (refillBase / colF) + (speedConfig.refill.above_offset_ms || 0));
+      const perRowInside = Math.max(10, (refillBase / Math.max(0.1, factorIn)) + 0);
+      const baseDur = Math.max(rowsAbove * perRowAbove + rowsIn * perRowInside, MIN_DUR);
+      const rank = (SIZE - 1) - sp.to.r; // bottom earliest
+      const tStart = ALPHA * rank;
+      const refillDelay = tStart;
+      const refillDuration = Math.max(T_end - tStart, MIN_DUR);
+      const a = clone.animate([
+        { transform: 'translate3d(0, 0, 0)' },
+        { transform: `translate3d(0, ${deltaRows * rowPx}px, 0)` }
+      ], { duration: refillDuration, delay: refillDelay, easing: 'ease-in-out', fill: 'forwards' });
+      spawnsAnims.push(a.finished.catch(() => {}));
+    }
+
+    await Promise.all([...survivorsAnims, ...spawnsAnims]);
+    try { overlay.remove(); } catch {}
+    for (const el of hidden) decHide(el);
+  }
+
+  function computeCollapseFactor(fromR, toR, c) { return 1; }
+
+  function computeRefillFactor(toR, c) { return 1; }
 
   function cloneBoard(b) { return b.map(row => row.slice()); }
   function rcToXY(r, c) { return { x: c + 1, y: SIZE - r }; }
@@ -677,8 +960,17 @@
       for (let c = 0; c < SIZE; c++) {
         const el = tileEls[r][c];
         const v = board[r][c];
-        const color = COLOR_NAMES[v];
-        el.className = `tile ${color}`;
+        if (v === null || v === undefined) {
+          el.className = 'tile';
+          // Hide empty cells during cleared state to avoid showing stale colors
+          el.style.visibility = 'hidden';
+        } else {
+          const color = COLOR_NAMES[v];
+          el.className = `tile ${color}`;
+          // Ensure visibility is restored unless an animation explicitly hid it
+          const hiddenCount = hideCounts.get(el) || 0;
+          if (hiddenCount <= 0) el.style.visibility = '';
+        }
       }
     }
     // Restore trail highlight if dragging
