@@ -55,12 +55,19 @@ body {
 }
 .tile:active { cursor: grabbing; }
 
+/* Enlarge pressed tile until release */
+.tile.pressed {
+  transform: scale(1.15);
+  z-index: 5; /* above neighbors but below animation clones */
+}
+
 /* Color variants */
 .tile.red    { --orb-color: #c17779; }
 .tile.pink   { --orb-color: #fdb7b9; }
 .tile.yellow { --orb-color: #f7e3db; }
 .tile.green  { --orb-color: #badfd7; }
 .tile.blue   { --orb-color: #60bfc1; }
+.tile.orange { --orb-color: #E8A342; }
 
 /* Drag visuals */
 .board.dragging .tile { cursor: grabbing; }

@@ -2,7 +2,7 @@
 
 (function () {
   const SIZE = 5;
-  const COLOR_NAMES = ["red", "pink", "yellow", "green", "blue"]; // indices 0..4
+  const COLOR_NAMES = ["red", "pink", "yellow", "green", "blue", "orange"]; // indices 0..5
 
   // State
   let board = createInitialBoard(SIZE);
@@ -25,12 +25,16 @@
   // Speed configuration for collapse and refill stages
   const speedConfig = {
     collapse: {
-      baseRowMs: ROW_MS,
+      baseRowMs: 50,
       inboard_offset_ms: 0, // additive ms/row for y=5->1; collapse only (pre-refill)
     },
     refill: {
-      baseRowMs: ROW_MS,
+      baseRowMs: 50,
       above_offset_ms: 0, // additive ms/row for y=10->5 (refill before entering)
+    },
+    swap: {
+      cw_offset_ms: 0,   // additive ms to SWAP_MS for clockwise orbits
+      ccw_offset_ms: 30,  // additive ms to SWAP_MS for counter-clockwise orbits
     },
   };
 
@@ -45,6 +49,8 @@
   const timingToggleEl = document.getElementById("timing-toggle");
   let debugEnabled = false;
   let debugActionCount = 0;
+  // Currently enlarged tile element during an active press/drag
+  let pressedEl = null;
 
   // Build grid once
   const tileEls = Array.from({ length: SIZE }, () => Array(SIZE).fill(null));
@@ -61,6 +67,7 @@
   // Events
   resetBtn.addEventListener("click", () => {
     dragging = false;
+    clearPressed();
     clearTrail();
     score = 0;
     updateScore(0);
@@ -73,7 +80,10 @@
     }
   });
 
+  // Always clear press state on release/cancel; keep existing game logic
   window.addEventListener("pointerup", onPointerUp);
+  window.addEventListener("pointerup", clearPressed);
+  window.addEventListener("pointercancel", clearPressed);
   window.addEventListener("resize", positionDebugUI);
   window.addEventListener("scroll", positionDebugUI, { passive: true });
   window.addEventListener("resize", positionTimingPanel);
@@ -184,6 +194,7 @@
         <div class=\"grid\"><label>Collapse offset (ms/row)</label><input id=\"inboard-offset\" type=\"number\" min=\"-500\" max=\"500\" step=\"5\"></div>
         ${baseInput('collapse', 'Collapse')}
       </div>
+      <div class=\"section\">\n        <h3>Panel 3 — Swapping speed</h3>\n        <div class=\"small\">Adjust CW/CCW swap duration by ±ms relative to base (90ms).</div>\n        <div class=\"grid\"><label>Clockwise offset (ms)</label><input id=\"swap-cw\" type=\"number\" min=\"-1000\" max=\"1000\" step=\"5\"></div>\n        <div class=\"grid\"><label>Counter-clockwise offset (ms)</label><input id=\"swap-ccw\" type=\"number\" min=\"-1000\" max=\"1000\" step=\"5\"></div>\n      </div>
       <div class=\"actions\">
         <button id=\"timing-reset\" class=\"btn\" type=\"button\">Reset</button>
         <button id=\"timing-apply\" class=\"btn\" type=\"button\">Apply</button>
@@ -198,6 +209,8 @@
     write('refill-base', speedConfig.refill.baseRowMs);
     write('above-offset', speedConfig.refill.above_offset_ms);
     write('inboard-offset', speedConfig.collapse.inboard_offset_ms);
+    write('swap-cw', (speedConfig.swap && speedConfig.swap.cw_offset_ms) || 0);
+    write('swap-ccw', (speedConfig.swap && speedConfig.swap.ccw_offset_ms) || 0);
   }
 
   function applyTimingFromUI() {
@@ -211,13 +224,18 @@
     speedConfig.refill.baseRowMs = Math.max(10, readNum('refill-base', ROW_MS));
     speedConfig.refill.above_offset_ms = Math.max(-500, Math.min(500, readNum('above-offset', 0)));
     speedConfig.collapse.inboard_offset_ms = Math.max(-500, Math.min(500, readNum('inboard-offset', 0)));
+    speedConfig.swap.cw_offset_ms = Math.max(-1000, Math.min(1000, readNum('swap-cw', 0)));
+    speedConfig.swap.ccw_offset_ms = Math.max(-1000, Math.min(1000, readNum('swap-ccw', 0)));
   }
 
   function resetTimingToDefault() {
-    speedConfig.collapse.baseRowMs = ROW_MS;
-    speedConfig.refill.baseRowMs = ROW_MS;
+    // Defaults per request
+    speedConfig.collapse.baseRowMs = 50;
+    speedConfig.refill.baseRowMs = 50;
     speedConfig.refill.above_offset_ms = 0;
     speedConfig.collapse.inboard_offset_ms = 0;
+    speedConfig.swap.cw_offset_ms = 0;
+    speedConfig.swap.ccw_offset_ms = 30;
   }
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -242,9 +260,13 @@
 
   // --- Input handlers ---
   function onPointerDown(e) {
-    if (reverting || animatingCascade) return;
     const tile = e.target.closest(".tile");
     if (!tile) return;
+    // Visual press feedback (independent of gameplay state)
+    if (pressedEl && pressedEl !== tile) pressedEl.classList.remove("pressed");
+    tile.classList.add("pressed");
+    pressedEl = tile;
+    if (reverting || animatingCascade) return;
     e.preventDefault();
     const r = parseInt(tile.dataset.r, 10);
     const c = parseInt(tile.dataset.c, 10);
@@ -257,10 +279,20 @@
     updateGlowPreview();
   }
 
+  // Clear any pressed visuals
+  function clearPressed() {
+    if (pressedEl) pressedEl.classList.remove("pressed");
+    pressedEl = null;
+  }
+
   function onTileEnter(e) {
     if (!dragging) return;
     const tile = e.target.closest(".tile");
     if (!tile) return;
+    // Keep the enlarge on the current hovered tile during drag
+    if (pressedEl && pressedEl !== tile) pressedEl.classList.remove("pressed");
+    tile.classList.add("pressed");
+    pressedEl = tile;
     const r = parseInt(tile.dataset.r, 10);
     const c = parseInt(tile.dataset.c, 10);
     const pos = { r, c };
@@ -433,7 +465,7 @@
   }
 
   async function resolveMatchesAndCascades() {
-    let totalCleared = 0;
+    let matchCount = 0;
     animatingCascade = true;
     try {
       // Ensure queued swap animations finished
@@ -443,7 +475,8 @@
         if (matches.length === 0) break;
 
         const toClear = expandConnectedSameColor(board, matches);
-        totalCleared += toClear.length;
+        // Count connected clusters within the clear set as individual matches
+        matchCount += countClearClusters(board, toClear);
 
         const boardBefore = debugEnabled ? cloneBoard(board) : null;
 
@@ -483,9 +516,9 @@
     } finally {
       animatingCascade = false;
     }
-    if (totalCleared > 0) updateScore(score + totalCleared * 10);
+    if (matchCount > 0) updateScore(score + matchCount * 10);
     draw();
-    return totalCleared;
+    return matchCount;
   }
 
   function measureRowDistance() {
@@ -698,13 +731,17 @@
       }
     }
 
+    // If membership changed, toggle epoch to restart the breathing animation.
     if (changed) {
       glowEpoch = 1 - glowEpoch;
       boardEl.classList.toggle("glow-epoch-0", glowEpoch === 0);
       boardEl.classList.toggle("glow-epoch-1", glowEpoch === 1);
+    }
 
-      // Rebuild overlay dots for a continuous outside glow
-      while (glowOverlayEl.firstChild) glowOverlayEl.removeChild(glowOverlayEl.firstChild);
+    // Always rebuild overlay geometry so it aligns with any transforms
+    // (e.g., the 15% press scale while holding during a match).
+    while (glowOverlayEl.firstChild) glowOverlayEl.removeChild(glowOverlayEl.firstChild);
+    if (nextSet.size > 0) {
       const br = boardEl.getBoundingClientRect();
       for (let r = 0; r < SIZE; r++) {
         for (let c = 0; c < SIZE; c++) {
@@ -721,8 +758,8 @@
           glowOverlayEl.appendChild(dot);
         }
       }
-      glowSet = nextSet;
     }
+    glowSet = nextSet;
   }
 
   function clearGlowPreview() {
@@ -786,7 +823,7 @@
     incHide(elB);
 
     const [kA, kB] = makeArcKeyframesVector(dx, dy, clockwise);
-    const timing = { duration: SWAP_MS, easing: "ease-in-out", fill: "forwards" };
+    const timing = { duration: computeSwapDuration(clockwise), easing: "ease-in-out", fill: "forwards" };
 
     const aAnim = cloneA.animate(kA, timing);
     const bAnim = cloneB.animate(kB, timing);
@@ -839,7 +876,7 @@
     incHide(elB);
 
     const [kA, kB] = makeArcKeyframesVector(dx, dy, clockwise);
-    const timing = { duration: SWAP_MS, easing: "ease-in-out", fill: "forwards" };
+    const timing = { duration: computeSwapDuration(clockwise), easing: "ease-in-out", fill: "forwards" };
     activeSwaps++;
     const aAnim = cloneA.animate(kA, timing);
     const bAnim = cloneB.animate(kB, timing);
@@ -886,6 +923,15 @@
       { transform: `translate3d(${-dx}px, ${-dy}px, 0) rotate(${rotSign * 180}deg)`, offset: 1 },
     ];
     return [kA, kB];
+  }
+
+  // Compute swap duration based on direction and panel offsets
+  function computeSwapDuration(clockwise) {
+    const base = SWAP_MS;
+    const cfg = speedConfig.swap || {};
+    const off = clockwise ? (cfg.cw_offset_ms || 0) : (cfg.ccw_offset_ms || 0);
+    const dur = base + off;
+    return Math.max(20, Math.min(2000, dur));
   }
 
   function incHide(el) {
@@ -954,6 +1000,37 @@
     return out;
   }
 
+  // Count number of 4-connected same-color clusters within the set of cells to clear
+  function countClearClusters(b, toClear) {
+    if (!toClear || toClear.length === 0) return 0;
+    const set = new Set(toClear.map(({r,c}) => `${r},${c}`));
+    const seen = new Set();
+    const n = b.length;
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    let clusters = 0;
+    for (const {r, c} of toClear) {
+      const k = `${r},${c}`;
+      if (seen.has(k)) continue;
+      clusters++;
+      const color = b[r][c];
+      const q = [{r, c}];
+      seen.add(k);
+      while (q.length) {
+        const p = q.pop();
+        for (const [dr, dc] of dirs) {
+          const nr = p.r + dr, nc = p.c + dc;
+          if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+          const nk = `${nr},${nc}`;
+          if (!set.has(nk) || seen.has(nk)) continue;
+          if (b[nr][nc] !== color) continue;
+          seen.add(nk);
+          q.push({r: nr, c: nc});
+        }
+      }
+    }
+    return clusters;
+  }
+
   // --- Rendering ---
   function draw() {
     for (let r = 0; r < SIZE; r++) {
@@ -973,6 +1050,8 @@
         }
       }
     }
+    // Reapply pressed visual after class resets
+    if (pressedEl) pressedEl.classList.add('pressed');
     // Restore trail highlight if dragging
     if (dragging) refreshTrail();
   }
