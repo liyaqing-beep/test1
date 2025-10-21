@@ -1,15 +1,15 @@
 # Match‑3 (5×5) — Drag‑Snake, Cascades, and Live Glow
 
-A lightweight, self‑contained match‑3 web game with a 5×5 board. Drag to snake across orthogonally adjacent tiles (no diagonals). Loops are allowed. On release, if the board has any valid match, connected clusters clear with instant cascades/refills; otherwise the move rolls back visually along the path.
+A lightweight, self‑contained match‑3 web game with a 5×5 board. Drag to snake across orthogonally adjacent tiles (no diagonals). Loops are allowed. On release, if the board has any valid match, connected clusters clear with animated cascades (fade, fall, refill); otherwise the move rolls back visually along the path.
 
 ## Features
-- 5×5 board with instant collapse + refill cascades
+- 5×5 board with animated cascades (fade, fall, refill)
 - Drag‑snake input (orthogonal adjacency, loops allowed; one swap per entered cell)
 - Matching rule: any 3+ line/column creates a valid match; then all same‑color tiles 4‑connected to any matched tile are cleared in that action
 - Scoring: +10 points per cleared tile (per cascade wave)
 - Invalid move: rolls back along the exact path with semicircle swap animations, then a brief shake on the start tile
-- Swap animation per step: left→right and top→down rotate clockwise around the midpoint; right→left and down→up rotate anti‑clockwise
-- Live match preview glow: breathing, continuous outside glow around the union of matched tiles; only visible while dragging and only when no swap animation is running
+- Swap animation per step (90ms): left→right and top→down rotate clockwise around the midpoint; right→left and down→up rotate anti‑clockwise; direction logic is strictly enforced
+- Live match preview glow: breathing, continuous outside halo (overlap merges) drawn via an overlay; only visible while dragging and only when no animation is running
 - Reset button to start over
 
 ## Visual Style
@@ -54,9 +54,16 @@ This is a static web app — no build step required.
 
 ## Implementation Notes
 - Initial board generation avoids starting matches
-- Matching: find horizontal/vertical 3+ runs; union them and expand to connected same‑color clusters (no diagonals)
-- Cascades: instant column collapse, instant refill, loop until stable
-- Animations: Web Animations API; swaps are serialized (90ms each) to ensure consistent clockwise/counter‑clockwise semicircle motion per step; preview glow is gated to show only when no swaps are active
+- Matching: find horizontal/vertical 3+ runs; union their seeds and expand to 4‑connected same‑color clusters (L/T supported; no diagonals)
+- Cascades (per wave):
+  - Fade matched tiles in place (~320ms)
+  - Compute gravity plan from the cleared snapshot
+  - Animate survivors falling (per‑row ~100ms, ease‑in‑out), spawns enter from above and fall to their cells
+  - Commit the new board; repeat until stable
+- Animations: Web Animations API
+  - Drag swaps use serialized semicircle orbits (90ms each) to avoid overlap artifacts, with precise CW/CCW mapping
+  - Fall/refill uses overlay clones so the grid remains stable; originals are hidden/unhidden with ref‑counts
+  - Glow preview is drawn as a union halo overlay and gated to display only when not swapping/falling
 - Accessibility: tiles are focusable via pointer and labeled; pointer events used for fluid drag on desktop/mobile
 
 ## License
