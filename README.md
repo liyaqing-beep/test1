@@ -41,6 +41,22 @@ A fixed panel can be toggled next to the board for cascade introspection.
   - Expanded clear set (connected same‑color cluster)
   - Snapshots: Before clear, After clear (committed), After collapse+refill (committed)
 
+## Timing Panel
+Foldable controls for fall timing, mirrored on the left side of the board.
+- Toggle: Show Panel / Hide Panel
+- Panel 1 — Falling speed (above the playboard)
+  - Above‑board offset (ms/row): additive adjustment for refill tiles before entering the board (logical y 10 → 5). Positive slows; negative speeds up.
+  - Refill Base ms/row: base time per row for refill. Default: 60.
+- Panel 2 — Collapse speed (within the playboard)
+  - Collapse offset (ms/row): additive adjustment that only affects collapse (pre‑refill) inside the board (y 5 → 1). Positive slows; negative speeds up.
+  - Collapse Base ms/row: base time per row for collapse. Default: 60.
+- Apply / Reset: Apply changes or reset offsets/base values to defaults.
+
+Behavior
+- Refills start from outside at y = 10 for each column x = 1..5 and are clipped until they enter the board area.
+- Bottom rows start earliest and top rows latest per wave; all columns finish landing together (shared wave end time).
+- Live glow preview now starts at the brightest moment for a snappier visual.
+
 ## Project Layout
 - `src/index.html` — App HTML and UI scaffolding
 - `src/styles.css` — Styles, board/tiles, glow overlay, swap clone styles, debug styles
@@ -58,12 +74,12 @@ This is a static web app — no build step required.
 - Cascades (per wave):
   - Fade matched tiles in place (~320ms)
   - Compute gravity plan from the cleared snapshot
-  - Animate survivors falling (per‑row ~100ms, ease‑in‑out), spawns enter from above and fall to their cells
+  - Animate survivors falling (per‑row ~60ms by default, ease‑in‑out) with bottom‑first starts; spawns enter from above (start at y=10) and fall to their cells; landings are synchronized per wave
   - Commit the new board; repeat until stable
 - Animations: Web Animations API
   - Drag swaps use serialized semicircle orbits (90ms each) to avoid overlap artifacts, with precise CW/CCW mapping
   - Fall/refill uses overlay clones so the grid remains stable; originals are hidden/unhidden with ref‑counts
-  - Glow preview is drawn as a union halo overlay and gated to display only when not swapping/falling
+  - Glow preview is drawn as a union halo overlay, starts bright, and is gated to display only when not swapping/falling
 - Accessibility: tiles are focusable via pointer and labeled; pointer events used for fluid drag on desktop/mobile
 
 ## License
