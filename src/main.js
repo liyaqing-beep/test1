@@ -42,6 +42,7 @@
   const boardEl = document.getElementById("board");
   const scoreEl = document.getElementById("score");
   const resetBtn = document.getElementById("reset");
+  const mainEl = document.querySelector('.main');
   const debugToggleEl = document.getElementById("debug-toggle");
   const debugClearEl = document.getElementById("debug-clear");
   const debugPanelEl = document.getElementById("debug-panel");
@@ -52,15 +53,28 @@
   // Currently enlarged tile element during an active press/drag
   let pressedEl = null;
 
+  // Life meter state/config
+  let life = 60;
+  const LIFE_MAX = 60;
+  const DECAY_STEP = 10;
+  const DECAY_INTERVAL_MS = 2000;
+  const NO_MATCH_PENALTY = 20;
+  let lifeTimer = null;
+  let lost = false;
+  let lifeWrapEl = null, lifeMeterEl = null, lifeFillEl = null, lifeTextEl = null;
+
   // Build grid once
   const tileEls = Array.from({ length: SIZE }, () => Array(SIZE).fill(null));
   buildGrid();
+  buildLifeMeter();
   // Overlay for continuous outside glow
   const glowOverlayEl = document.createElement("div");
   glowOverlayEl.className = "glow-overlay";
   boardEl.appendChild(glowOverlayEl);
   draw();
   updateScore(0);
+  updateLifeUI();
+  restartLifeDecayTimer();
   setupDebugUI();
   setupTimingPanel();
 
@@ -73,6 +87,11 @@
     updateScore(0);
     board = createInitialBoard(SIZE);
     draw();
+    // Reset life and state
+    lost = false;
+    setLife(LIFE_MAX);
+    hideGameOver();
+    restartLifeDecayTimer();
     if (debugEnabled) {
       debugPanelEl.innerHTML = "";
       debugActionCount = 0;
@@ -88,6 +107,15 @@
   window.addEventListener("scroll", positionDebugUI, { passive: true });
   window.addEventListener("resize", positionTimingPanel);
   window.addEventListener("scroll", positionTimingPanel, { passive: true });
+  window.addEventListener('resize', positionLifeMeter);
+  window.addEventListener('scroll', positionLifeMeter, { passive: true });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      stopLifeDecayTimer();
+    } else {
+      restartLifeDecayTimer();
+    }
+  });
   
 
   // --- UI construction ---
@@ -107,6 +135,29 @@
         tileEls[r][c] = tile;
       }
     }
+  }
+
+  function buildLifeMeter() {
+    if (!mainEl) return;
+    lifeWrapEl = document.createElement('div');
+    lifeWrapEl.className = 'life-container';
+    lifeMeterEl = document.createElement('div');
+    lifeMeterEl.className = 'life-meter';
+    lifeFillEl = document.createElement('div');
+    lifeFillEl.className = 'life-fill';
+    lifeTextEl = document.createElement('div');
+    lifeTextEl.className = 'life-text';
+    lifeTextEl.setAttribute('aria-live', 'polite');
+    lifeMeterEl.appendChild(lifeFillEl);
+    lifeMeterEl.appendChild(lifeTextEl);
+    lifeWrapEl.appendChild(lifeMeterEl);
+    // Insert above the board element
+    if (boardEl.parentNode === mainEl) {
+      mainEl.insertBefore(lifeWrapEl, boardEl);
+    } else {
+      mainEl.appendChild(lifeWrapEl);
+    }
+    positionLifeMeter();
   }
 
   // --- Debug UI ---
@@ -258,6 +309,13 @@
     timingPanelEl.style.top = Math.round(top + toggleHeight + 8) + 'px';
   }
 
+  function positionLifeMeter() {
+    if (!lifeMeterEl) return;
+    const rect = boardEl.getBoundingClientRect();
+    const w = Math.max(0, Math.round(rect.width));
+    lifeMeterEl.style.width = w + 'px';
+  }
+
   // --- Input handlers ---
   function onPointerDown(e) {
     const tile = e.target.closest(".tile");
@@ -266,7 +324,7 @@
     if (pressedEl && pressedEl !== tile) pressedEl.classList.remove("pressed");
     tile.classList.add("pressed");
     pressedEl = tile;
-    if (reverting || animatingCascade) return;
+    if (lost || reverting || animatingCascade) return;
     e.preventDefault();
     const r = parseInt(tile.dataset.r, 10);
     const c = parseInt(tile.dataset.c, 10);
@@ -346,6 +404,8 @@
     if (anyCleared === 0) {
       // No match -> visually roll back along the path
       reverting = true;
+      // Apply penalty for failed move
+      addLife(-NO_MATCH_PENALTY);
       const savedPath = path.slice();
       const savedStart = startPos ? { r: startPos.r, c: startPos.c } : null;
       (async () => {
@@ -490,6 +550,16 @@
           const el = tileEls[r][c];
           if (el) el.classList.remove("clearing");
         }
+
+        // Apply life gains for this wave after tiles disappeared
+        const sizes = clusterSizesForClear(board, toClear);
+        let lifeGain = 0;
+        for (const sz of sizes) {
+          if (sz >= 8) lifeGain += 10;
+          else if (sz >= 6) lifeGain += 5;
+          else if (sz >= 3) lifeGain += 3;
+        }
+        if (lifeGain > 0) addLife(lifeGain);
 
         // Snapshot board after clear (without mutating original yet)
         const snapshot = board.map((row) => row.slice());
@@ -1031,6 +1101,39 @@
     return clusters;
   }
 
+  // Return sizes of same-color clusters within the toClear set (for a single wave)
+  function clusterSizesForClear(b, toClear) {
+    if (!toClear || toClear.length === 0) return [];
+    const set = new Set(toClear.map(({r,c}) => `${r},${c}`));
+    const seen = new Set();
+    const n = b.length;
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    const sizes = [];
+    for (const {r, c} of toClear) {
+      const k = `${r},${c}`;
+      if (seen.has(k)) continue;
+      const color = b[r][c];
+      let size = 0;
+      const q = [{r, c}];
+      seen.add(k);
+      while (q.length) {
+        const p = q.pop();
+        size++;
+        for (const [dr, dc] of dirs) {
+          const nr = p.r + dr, nc = p.c + dc;
+          if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+          const nk = `${nr},${nc}`;
+          if (!set.has(nk) || seen.has(nk)) continue;
+          if (b[nr][nc] !== color) continue;
+          seen.add(nk);
+          q.push({r: nr, c: nc});
+        }
+      }
+      sizes.push(size);
+    }
+    return sizes;
+  }
+
   // --- Rendering ---
   function draw() {
     for (let r = 0; r < SIZE; r++) {
@@ -1074,5 +1177,76 @@
   function updateScore(v) {
     score = v;
     scoreEl.textContent = String(score);
+  }
+
+  // --- Life helpers ---
+  function setLife(v) {
+    const nv = clamp(v, 0, LIFE_MAX);
+    life = nv;
+    updateLifeUI();
+    if (life <= 0) {
+      onGameOver();
+    }
+  }
+  function addLife(delta) {
+    setLife(life + delta);
+    restartLifeDecayTimer();
+  }
+  function updateLifeUI() {
+    if (!lifeFillEl || !lifeTextEl) return;
+    const pct = (life / LIFE_MAX) * 100;
+    lifeFillEl.style.width = pct + '%';
+    lifeTextEl.textContent = `Life: ${life} / ${LIFE_MAX}`;
+  }
+  function restartLifeDecayTimer() {
+    stopLifeDecayTimer();
+    if (lost) return;
+    lifeTimer = setTimeout(() => {
+      if (life > 0) {
+        setLife(life - DECAY_STEP);
+      }
+      if (!lost && life > 0) restartLifeDecayTimer();
+    }, DECAY_INTERVAL_MS);
+  }
+  function stopLifeDecayTimer() {
+    if (lifeTimer) {
+      clearTimeout(lifeTimer);
+      lifeTimer = null;
+    }
+  }
+  function onGameOver() {
+    lost = true;
+    stopLifeDecayTimer();
+    showGameOver();
+  }
+  function showGameOver() {
+    let overlay = document.querySelector('.game-over');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.className = 'game-over';
+      const card = document.createElement('div');
+      card.className = 'card';
+      const title = document.createElement('h2');
+      title.textContent = 'Life depleted — Game Over';
+      const info = document.createElement('p');
+      info.textContent = 'Press Reset to start again.';
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = 'Reset';
+      btn.addEventListener('click', () => resetBtn.click());
+      actions.appendChild(btn);
+      card.appendChild(title);
+      card.appendChild(info);
+      card.appendChild(actions);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'flex';
+  }
+  function hideGameOver() {
+    const overlay = document.querySelector('.game-over');
+    if (overlay) overlay.style.display = 'none';
   }
 })();
