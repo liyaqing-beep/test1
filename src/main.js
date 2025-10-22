@@ -169,7 +169,8 @@
     if (!lifeToggleBtn) return;
     const refresh = () => {
       lifeToggleBtn.textContent = lifeSystemEnabled ? 'Life: On' : 'Life: Off';
-      if (lifeMeterEl) lifeMeterEl.classList.toggle('disabled', !lifeSystemEnabled);
+      // Hide or show the entire life bar container when toggled
+      if (lifeWrapEl) lifeWrapEl.style.display = lifeSystemEnabled ? '' : 'none';
     };
     refresh();
     lifeToggleBtn.addEventListener('click', () => {
