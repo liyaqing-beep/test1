@@ -57,9 +57,10 @@
   let life = 60;
   const LIFE_MAX = 60;
   const DECAY_STEP = 10;
-  const DECAY_INTERVAL_MS = 2000;
+  const DECAY_INTERVAL_MS = 1000; // 10 per second
   const NO_MATCH_PENALTY = 20;
   let lifeTimer = null;
+  let lifeActive = false; // meter starts only after first match
   let lost = false;
   let lifeWrapEl = null, lifeMeterEl = null, lifeFillEl = null, lifeTextEl = null;
 
@@ -74,7 +75,7 @@
   draw();
   updateScore(0);
   updateLifeUI();
-  restartLifeDecayTimer();
+  // Do not start decay until the first match is detected
   setupDebugUI();
   setupTimingPanel();
 
@@ -87,11 +88,12 @@
     updateScore(0);
     board = createInitialBoard(SIZE);
     draw();
-    // Reset life and state
+    // Reset life and state — meter will start after first match
     lost = false;
+    lifeActive = false;
     setLife(LIFE_MAX);
     hideGameOver();
-    restartLifeDecayTimer();
+    stopLifeDecayTimer();
     if (debugEnabled) {
       debugPanelEl.innerHTML = "";
       debugActionCount = 0;
@@ -404,8 +406,8 @@
     if (anyCleared === 0) {
       // No match -> visually roll back along the path
       reverting = true;
-      // Apply penalty for failed move
-      addLife(-NO_MATCH_PENALTY);
+      // Apply penalty for failed move only if life has started
+      if (lifeActive) addLife(-NO_MATCH_PENALTY);
       const savedPath = path.slice();
       const savedStart = startPos ? { r: startPos.r, c: startPos.c } : null;
       (async () => {
@@ -551,6 +553,8 @@
           if (el) el.classList.remove("clearing");
         }
 
+        // Ensure life system starts on first match, then apply life gains
+        if (!lifeActive) startLife();
         // Apply life gains for this wave after tiles disappeared
         const sizes = clusterSizesForClear(board, toClear);
         let lifeGain = 0;
@@ -1200,7 +1204,7 @@
   }
   function restartLifeDecayTimer() {
     stopLifeDecayTimer();
-    if (lost) return;
+    if (lost || !lifeActive) return;
     lifeTimer = setTimeout(() => {
       if (life > 0) {
         setLife(life - DECAY_STEP);
@@ -1218,6 +1222,11 @@
     lost = true;
     stopLifeDecayTimer();
     showGameOver();
+  }
+  function startLife() {
+    lifeActive = true;
+    setLife(LIFE_MAX);
+    restartLifeDecayTimer();
   }
   function showGameOver() {
     let overlay = document.querySelector('.game-over');
