@@ -56,7 +56,7 @@
   // Life meter state/config
   let life = 60;
   const LIFE_MAX = 60;
-  const DECAY_STEP = 10;
+  const DECAY_STEP = 5;
   const DECAY_INTERVAL_MS = 1000; // 10 per second
   const NO_MATCH_PENALTY = 20;
   let lifeTimer = null;
@@ -559,10 +559,12 @@
         const sizes = clusterSizesForClear(board, toClear);
         let lifeGain = 0;
         for (const sz of sizes) {
-          if (sz >= 8) lifeGain += 10;
-          else if (sz >= 6) lifeGain += 5;
-          else if (sz >= 3) lifeGain += 3;
+          if (sz >= 8) lifeGain += 30;
+          else if (sz >= 6) lifeGain += 15;
+          else if (sz >= 3) lifeGain += 5;
         }
+        // Double gain if multiple clusters matched in this wave
+        if (sizes.length >= 2) lifeGain *= 2;
         if (lifeGain > 0) addLife(lifeGain);
 
         // Snapshot board after clear (without mutating original yet)
@@ -1194,7 +1196,7 @@
   }
   function addLife(delta) {
     setLife(life + delta);
-    restartLifeDecayTimer();
+    // Do not reset decay schedule on gains/penalties; decay continues only by its own drops
   }
   function updateLifeUI() {
     if (!lifeFillEl || !lifeTextEl) return;
