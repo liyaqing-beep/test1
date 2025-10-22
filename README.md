@@ -30,7 +30,8 @@ A lightweight, self‑contained match‑3 web game with a 5×5 board. Drag to sn
 
 ## Life Meter (Game Rule)
 - Purpose: Keep scoring as-is, survive by maintaining Life > 0.
-- Placement: A life bar is always shown above the board, sized to match the board width.
+- Placement: The life bar shows above the board (matches board width) when enabled.
+- Toggle: A HUD button “Life: On/Off” enables or disables the life system. When Off, the life bar is hidden and there is no decay, gains, or penalties; when turned On again, the meter remains idle until your next successful match.
 - Start: The meter is inactive until your first successful match; on that first match it starts at 60 life and decay begins.
 - Decay: −5 life per second (max 60). Decay ticks chain only after each drop (gains/penalties do not reset the next tick). Pauses while the tab is hidden.
 - Gains (apply per cascade wave, right after matched tiles fade out):
