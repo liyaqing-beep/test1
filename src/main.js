@@ -43,6 +43,7 @@
   const scoreEl = document.getElementById("score");
   const resetBtn = document.getElementById("reset");
   const mainEl = document.querySelector('.main');
+  const lifeToggleBtn = document.getElementById('life-toggle');
   const debugToggleEl = document.getElementById("debug-toggle");
   const debugClearEl = document.getElementById("debug-clear");
   const debugPanelEl = document.getElementById("debug-panel");
@@ -62,6 +63,7 @@
   let lifeTimer = null;
   let lifeActive = false; // meter starts only after first match
   let lost = false;
+  let lifeSystemEnabled = true; // on/off toggle
   let lifeWrapEl = null, lifeMeterEl = null, lifeFillEl = null, lifeTextEl = null;
 
   // Build grid once
@@ -78,6 +80,7 @@
   // Do not start decay until the first match is detected
   setupDebugUI();
   setupTimingPanel();
+  setupLifeToggle();
 
   // Events
   resetBtn.addEventListener("click", () => {
@@ -88,7 +91,7 @@
     updateScore(0);
     board = createInitialBoard(SIZE);
     draw();
-    // Reset life and state — meter will start after first match
+    // Reset life and state — meter will start after first match (if enabled)
     lost = false;
     lifeActive = false;
     setLife(LIFE_MAX);
@@ -160,6 +163,29 @@
       mainEl.appendChild(lifeWrapEl);
     }
     positionLifeMeter();
+  }
+
+  function setupLifeToggle() {
+    if (!lifeToggleBtn) return;
+    const refresh = () => {
+      lifeToggleBtn.textContent = lifeSystemEnabled ? 'Life: On' : 'Life: Off';
+      if (lifeMeterEl) lifeMeterEl.classList.toggle('disabled', !lifeSystemEnabled);
+    };
+    refresh();
+    lifeToggleBtn.addEventListener('click', () => {
+      lifeSystemEnabled = !lifeSystemEnabled;
+      if (!lifeSystemEnabled) {
+        // Turning off the life system: stop timers, clear loss state and overlay
+        stopLifeDecayTimer();
+        lost = false;
+        lifeActive = false; // require a new match to start when re-enabled
+        hideGameOver();
+      } else {
+        // Re-enabled: wait for first successful match to start
+        // no immediate start here to honor the rule
+      }
+      refresh();
+    });
   }
 
   // --- Debug UI ---
@@ -407,7 +433,7 @@
       // No match -> visually roll back along the path
       reverting = true;
       // Apply penalty for failed move only if life has started
-      if (lifeActive) addLife(-NO_MATCH_PENALTY);
+      if (lifeSystemEnabled && lifeActive) addLife(-NO_MATCH_PENALTY);
       const savedPath = path.slice();
       const savedStart = startPos ? { r: startPos.r, c: startPos.c } : null;
       (async () => {
@@ -554,7 +580,7 @@
         }
 
         // Ensure life system starts on first match, then apply life gains
-        if (!lifeActive) startLife();
+        if (lifeSystemEnabled && !lifeActive) startLife();
         // Apply life gains for this wave after tiles disappeared
         const sizes = clusterSizesForClear(board, toClear);
         let lifeGain = 0;
@@ -565,7 +591,7 @@
         }
         // Double gain if multiple clusters matched in this wave
         if (sizes.length >= 2) lifeGain *= 2;
-        if (lifeGain > 0) addLife(lifeGain);
+        if (lifeSystemEnabled && lifeGain > 0) addLife(lifeGain);
 
         // Snapshot board after clear (without mutating original yet)
         const snapshot = board.map((row) => row.slice());

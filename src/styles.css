@@ -40,6 +40,7 @@ body {
   position: relative;
   overflow: hidden;
 }
+.life-meter.disabled { opacity: 0.5; filter: grayscale(40%); }
 .life-fill {
   height: 100%;
   width: 0%;
