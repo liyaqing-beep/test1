@@ -28,6 +28,19 @@ A lightweight, self‑contained match‑3 web game with a 5×5 board. Drag to sn
 - Release: if any match exists, the move succeeds and cascades resolve; otherwise the move rolls back along the path
 - Reset: click Reset to re‑seed the board
 
+## Life Meter (Game Rule)
+- Purpose: Keep scoring as-is, survive by maintaining Life > 0.
+- Placement: A life bar is always shown above the board, sized to match the board width.
+- Start: The meter is inactive until your first successful match; on that first match it starts at 60 life and decay begins.
+- Decay: −5 life per second (max 60). Decay ticks chain only after each drop (gains/penalties do not reset the next tick). Pauses while the tab is hidden.
+- Gains (apply per cascade wave, right after matched tiles fade out):
+  - 3–5 tiles (same‑color cluster): +5 life per match
+  - 6–7 tiles: +15 life per match
+  - 8+ tiles: +30 life per match
+  - Multi‑match bonus: if 2+ clusters clear in the same wave, double that wave’s total life gain
+- Penalty: A failed move (no match) costs −20 life, but only after the meter has started.
+- Boundaries: Life clamps to [0, 60]. Reaching 0 shows a Game Over overlay; press Reset to start again.
+
 ## Coordinate System
 - External/logical (x, y): origin at bottom‑left, 1‑based; `x` increases → right, `y` increases → up
 - Internal (r, c): origin at top‑left, 0‑based; `r` increases → down, `c` increases → right
@@ -47,19 +60,19 @@ Foldable controls for animation timing, mirrored on the left side of the board.
 - Toggle: Show Panel / Hide Panel
 - Panel 1 — Falling speed (above the playboard)
   - Above‑board offset (ms/row): additive adjustment for refill tiles before entering the board (logical y 10 → 5). Positive slows; negative speeds up.
-  - Refill Base ms/row: base time per row for refill. Default: 50.
+  - Refill Base ms/row: base time per row for refill. Default: 30.
 - Panel 2 — Collapse speed (within the playboard)
   - Collapse offset (ms/row): additive adjustment that only affects collapse (pre‑refill) inside the board (y 5 → 1). Positive slows; negative speeds up.
-  - Collapse Base ms/row: base time per row for collapse. Default: 50.
+  - Collapse Base ms/row: base time per row for collapse. Default: 30.
 - Panel 3 — Swapping speed
   - Adjust clockwise/counter‑clockwise swap duration by ±ms relative to the base 90ms.
-  - Defaults: CW offset 0ms (90ms total), CCW offset +30ms (120ms total).
+  - Defaults: CW offset 0ms (90ms total), CCW offset +45ms (135ms total).
 - Apply / Reset: Apply changes or reset to defaults listed above.
 
 Defaults
-- Panel 1 — Above‑board offset: 0; Refill Base: 50 ms/row
-- Panel 2 — Collapse offset: 0; Collapse Base: 50 ms/row
-- Panel 3 — Swapping speed: CW offset 0 ms; CCW offset +30 ms
+- Panel 1 — Above‑board offset: 0; Refill Base: 30 ms/row
+- Panel 2 — Collapse offset: 0; Collapse Base: 30 ms/row
+- Panel 3 — Swapping speed: CW offset 0 ms; CCW offset +45 ms
 
 Behavior
 - Refills start from outside at y = 10 for each column x = 1..5 and are clipped until they enter the board area.
@@ -81,7 +94,7 @@ This is a static web app — no build step required.
 - Initial board generation avoids starting matches
 - Matching: find horizontal/vertical 3+ runs; union their seeds and expand to 4‑connected same‑color clusters (L/T supported; no diagonals)
 - Cascades (per wave):
-  - Fade matched tiles in place (~320ms)
+  - Fade matched tiles in place (~320ms); Life gains are computed and applied immediately after this fade for that wave
   - Compute gravity plan from the cleared snapshot
   - Animate survivors falling (per‑row ~50ms by default, ease‑in‑out) with bottom‑first starts; spawns enter from above (start at y=10) and fall to their cells; landings are synchronized per wave
   - Commit the new board; repeat until stable

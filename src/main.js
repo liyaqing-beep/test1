@@ -25,16 +25,16 @@
   // Speed configuration for collapse and refill stages
   const speedConfig = {
     collapse: {
-      baseRowMs: 50,
+      baseRowMs: 30,
       inboard_offset_ms: 0, // additive ms/row for y=5->1; collapse only (pre-refill)
     },
     refill: {
-      baseRowMs: 50,
+      baseRowMs: 30,
       above_offset_ms: 0, // additive ms/row for y=10->5 (refill before entering)
     },
     swap: {
       cw_offset_ms: 0,   // additive ms to SWAP_MS for clockwise orbits
-      ccw_offset_ms: 30,  // additive ms to SWAP_MS for counter-clockwise orbits
+      ccw_offset_ms: 45,  // additive ms to SWAP_MS for counter-clockwise orbits
     },
   };
 
@@ -283,12 +283,12 @@
 
   function resetTimingToDefault() {
     // Defaults per request
-    speedConfig.collapse.baseRowMs = 50;
-    speedConfig.refill.baseRowMs = 50;
+    speedConfig.collapse.baseRowMs = 30;
+    speedConfig.refill.baseRowMs = 30;
     speedConfig.refill.above_offset_ms = 0;
     speedConfig.collapse.inboard_offset_ms = 0;
     speedConfig.swap.cw_offset_ms = 0;
-    speedConfig.swap.ccw_offset_ms = 30;
+    speedConfig.swap.ccw_offset_ms = 45;
   }
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
