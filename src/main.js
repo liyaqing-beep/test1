@@ -576,38 +576,95 @@
     const last = path[path.length - 1];
     if (last.r === r && last.c === c) return; // same cell
 
-    if (!isAdjacent(last, pos)) return; // only orthogonal moves
+    // Allow diagonal drags by routing through an intermediate orthogonal cell
+    const dr = r - last.r;
+    const dc = c - last.c;
+    const isOrth = (Math.abs(dr) + Math.abs(dc) === 1);
+    const isDiag = (Math.abs(dr) === 1 && Math.abs(dc) === 1);
+    if (!isOrth && !isDiag) return; // ignore non-adjacent jumps
 
-    // Backtrack one step if re-entering the previous cell
-    if (path.length >= 2) {
-      const prev = path[path.length - 2];
-      if (prev.r === r && prev.c === c) {
-        // schedule visual animation (capture pre-swap colors), then swap state immediately
-        const colorA = COLOR_NAMES[board[last.r][last.c]];
-        const colorB = COLOR_NAMES[board[prev.r][prev.c]];
-        scheduleSwapAnimation(last, prev, colorA, colorB);
-        swap(last, prev);
-        path.pop();
-        pathSet.delete(key(last));
-        draw();
-        refreshTrail();
-        updateGlowPreview();
-        return;
+    // Helper to perform a backtrack step to 'toPos' if it equals previous
+    function maybeBacktrackStep(toPos) {
+      if (path.length >= 2) {
+        const prev = path[path.length - 2];
+        if (prev.r === toPos.r && prev.c === toPos.c) {
+          const colorA = COLOR_NAMES[board[last.r][last.c]];
+          const colorB = COLOR_NAMES[board[prev.r][prev.c]];
+          scheduleSwapAnimation(last, prev, colorA, colorB);
+          swap(last, prev);
+          path.pop();
+          pathSet.delete(key(last));
+          draw();
+          refreshTrail();
+          updateGlowPreview();
+          return true;
+        }
       }
+      return false;
     }
 
-    const k = key(pos);
+    // Helper to perform a forward step to 'toPos'
+    function forwardStep(toPos) {
+      const k = key(toPos);
+      const colorA = COLOR_NAMES[board[last.r][last.c]];
+      const colorB = COLOR_NAMES[board[toPos.r][toPos.c]];
+      scheduleSwapAnimation(last, toPos, colorA, colorB);
+      swap(last, toPos);
+      path.push(toPos);
+      pathSet.add(k);
+      draw();
+      refreshTrail();
+      updateGlowPreview();
+    }
 
-    // Step forward: schedule animation (capture pre-swap colors), then swap state immediately
-    const colorA = COLOR_NAMES[board[last.r][last.c]];
-    const colorB = COLOR_NAMES[board[pos.r][pos.c]];
-    scheduleSwapAnimation(last, pos, colorA, colorB);
-    swap(last, pos);
-    path.push(pos);
-    pathSet.add(k);
-    draw();
-    refreshTrail();
-    updateGlowPreview();
+    if (isOrth) {
+      // Original orthogonal behavior: handle possible backtrack, else forward
+      if (maybeBacktrackStep(pos)) return;
+      forwardStep(pos);
+      return;
+    }
+
+    // Diagonal: route horizontally first, then vertically
+    const mid = { r: last.r, c: last.c + Math.sign(dc) };
+    // Step 1: maybe backtrack or forward to mid
+    if (maybeBacktrackStep(mid)) {
+      // last has changed implicitly via swap/pop; rebind last to current tail
+      const newLast = path[path.length - 1];
+      // Step 2: forward to vertical target (pos)
+      const colorA2 = COLOR_NAMES[board[newLast.r][newLast.c]];
+      const colorB2 = COLOR_NAMES[board[pos.r][pos.c]];
+      scheduleSwapAnimation(newLast, pos, colorA2, colorB2);
+      swap(newLast, pos);
+      path.push(pos);
+      pathSet.add(key(pos));
+      draw();
+      refreshTrail();
+      updateGlowPreview();
+      return;
+    } else {
+      // Forward to mid, then forward to pos
+      const colorA1 = COLOR_NAMES[board[last.r][last.c]];
+      const colorB1 = COLOR_NAMES[board[mid.r][mid.c]];
+      scheduleSwapAnimation(last, mid, colorA1, colorB1);
+      swap(last, mid);
+      path.push(mid);
+      pathSet.add(key(mid));
+      draw();
+      refreshTrail();
+      updateGlowPreview();
+      // Rebind last to mid for second step
+      const newLast = mid;
+      const colorA2 = COLOR_NAMES[board[newLast.r][newLast.c]];
+      const colorB2 = COLOR_NAMES[board[pos.r][pos.c]];
+      scheduleSwapAnimation(newLast, pos, colorA2, colorB2);
+      swap(newLast, pos);
+      path.push(pos);
+      pathSet.add(key(pos));
+      draw();
+      refreshTrail();
+      updateGlowPreview();
+      return;
+    }
   }
 
   async function onPointerUp() {
