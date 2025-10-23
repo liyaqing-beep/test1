@@ -2,23 +2,42 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <title>Match‑3 — 5x5 Board</title>
+    <!-- iOS/PWA install & status bar -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Match‑3" />
+    <link rel="apple-touch-icon" href="../assets/icon-180.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="app">
       <header class="topbar">
-        <h1 class="title">Match‑3</h1>
         <div class="hud">
           <div class="score">Score: <span id="score">0</span></div>
           <button id="reset" class="btn">Reset</button>
-          <button id="life-toggle" class="btn" type="button">Life: On</button>
+          <div class="cm-mode-group">
+            <button id="cm-mode-toggle" class="btn" type="button" aria-haspopup="true" aria-expanded="false">Game Mode: Off</button>
+            <div id="cm-mode-menu" class="cm-mode-menu" role="menu" aria-label="Game mode" hidden>
+              <button class="cm-mode-item" data-mode="off" role="menuitem">Off</button>
+              <button class="cm-mode-item" data-mode="life" role="menuitem">Life</button>
+              <button class="cm-mode-item" data-mode="color" role="menuitem">Color</button>
+            </div>
+          </div>
+          <div id="cm-steps" class="cm-steps" style="display:none">Steps: <span id="cm-steps-count">0</span></div>
+          <div id="cm-goal-indicator" class="cm-goal-indicator" style="display:none" aria-live="polite">
+            <span>Goal:</span>
+            <span class="cm-dot" id="cm-goal-dot"></span>
+            <span id="cm-goal-name"></span>
+          </div>
         </div>
       </header>
 
       <main class="main">
         <div id="board" class="board" role="grid" aria-label="Match-3 board"></div>
+        <div id="cm-rules" class="cm-rules" aria-live="polite"></div>
       </main>
     </div>
 
@@ -31,8 +50,14 @@
     <button id="timing-toggle" class="debug-toggle" style="display:none">Show Panel</button>
     <div id="timing-panel" class="timing-panel" aria-label="Timing controls"></div>
 
-    
-
+    <script>
+      // Register service worker for offline/PWA when served over HTTPS or localhost
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js').catch(() => {});
+        });
+      }
+    </script>
     <script src="main.js" defer></script>
   </body>
   </html>

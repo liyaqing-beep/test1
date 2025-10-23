@@ -41,9 +41,19 @@
   // Elements
   const boardEl = document.getElementById("board");
   const scoreEl = document.getElementById("score");
+  const scoreBoxEl = document.querySelector('.score');
   const resetBtn = document.getElementById("reset");
   const mainEl = document.querySelector('.main');
-  const lifeToggleBtn = document.getElementById('life-toggle');
+  // Life toggle removed; Life mode controlled via Game Mode
+  const cmModeToggleBtn = document.getElementById('cm-mode-toggle');
+  const cmModeMenuEl = document.getElementById('cm-mode-menu');
+  const cmStepsEl = document.getElementById('cm-steps');
+  const cmStepsCountEl = document.getElementById('cm-steps-count');
+  const cmGoalIndicatorEl = document.getElementById('cm-goal-indicator');
+  const cmGoalDotEl = document.getElementById('cm-goal-dot');
+  const cmGoalNameEl = document.getElementById('cm-goal-name');
+  const cmRulesEl = document.getElementById('cm-rules');
+  let cmRoundWinEl = null; // lazy-created round win overlay
   const debugToggleEl = document.getElementById("debug-toggle");
   const debugClearEl = document.getElementById("debug-clear");
   const debugPanelEl = document.getElementById("debug-panel");
@@ -63,8 +73,22 @@
   let lifeTimer = null;
   let lifeActive = false; // meter starts only after first match
   let lost = false;
-  let lifeSystemEnabled = true; // on/off toggle
+  let lifeSystemEnabled = false; // on/off toggle (default Off via Game Mode)
   let lifeWrapEl = null, lifeMeterEl = null, lifeFillEl = null, lifeTextEl = null;
+
+  // Game Mode (isolated): 'off' | 'life' | 'color' — default 'off'
+  let gameMode = 'off';
+  // Engine hook for resolving moves
+  const baseEngine = { resolve: resolveMatchesAndCascades };
+  let activeEngine = baseEngine;
+
+  // Isolated Color Mode state + engine
+  const colorState = {
+    goalColorIdx: 0,
+    steps: 0,
+    bannedColors: new Set(), // non-goal colors permanently removed from spawns
+    roundOver: false,
+  };
 
   // Build grid once
   const tileEls = Array.from({ length: SIZE }, () => Array(SIZE).fill(null));
@@ -80,7 +104,8 @@
   // Do not start decay until the first match is detected
   setupDebugUI();
   setupTimingPanel();
-  setupLifeToggle();
+  setupColorGameModeMenu();
+  setGameModeIsolated('off');
 
   // Events
   resetBtn.addEventListener("click", () => {
@@ -89,7 +114,12 @@
     clearTrail();
     score = 0;
     updateScore(0);
-    board = createInitialBoard(SIZE);
+    // Seed board based on current mode
+    if (gameMode === 'color') {
+      board = seedBoard_color(SIZE); // exactly 5 goal tiles at start
+    } else {
+      board = createInitialBoard(SIZE);
+    }
     draw();
     // Reset life and state — meter will start after first match (if enabled)
     lost = false;
@@ -97,17 +127,30 @@
     setLife(LIFE_MAX);
     hideGameOver();
     stopLifeDecayTimer();
+    // Color Mode: reset round state and UI
+    if (gameMode === 'color') {
+      colorState.steps = 0;
+      if (cmStepsCountEl) cmStepsCountEl.textContent = '0';
+      colorState.roundOver = false;
+      hideRoundWinOverlay_color();
+      refreshBannedColorsFromBoard_color(board);
+      applyGameModeUI();
+    }
     if (debugEnabled) {
       debugPanelEl.innerHTML = "";
       debugActionCount = 0;
       updateClearButtonVisibility();
     }
+    // Refresh mode-driven UI (ensures Off blurb shows when in default Off)
+    applyGameModeUI();
   });
 
   // Always clear press state on release/cancel; keep existing game logic
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("pointerup", clearPressed);
   window.addEventListener("pointercancel", clearPressed);
+  // Track finger movement on mobile; translate into per-tile enters
+  window.addEventListener("pointermove", onPointerMove, { passive: false });
   window.addEventListener("resize", positionDebugUI);
   window.addEventListener("scroll", positionDebugUI, { passive: true });
   window.addEventListener("resize", positionTimingPanel);
@@ -163,31 +206,12 @@
       mainEl.appendChild(lifeWrapEl);
     }
     positionLifeMeter();
+    // Respect current mode default (Off hides life meter)
+    if (!lifeSystemEnabled && lifeWrapEl) lifeWrapEl.style.display = 'none';
   }
 
-  function setupLifeToggle() {
-    if (!lifeToggleBtn) return;
-    const refresh = () => {
-      lifeToggleBtn.textContent = lifeSystemEnabled ? 'Life: On' : 'Life: Off';
-      // Hide or show the entire life bar container when toggled
-      if (lifeWrapEl) lifeWrapEl.style.display = lifeSystemEnabled ? '' : 'none';
-    };
-    refresh();
-    lifeToggleBtn.addEventListener('click', () => {
-      lifeSystemEnabled = !lifeSystemEnabled;
-      if (!lifeSystemEnabled) {
-        // Turning off the life system: stop timers, clear loss state and overlay
-        stopLifeDecayTimer();
-        lost = false;
-        lifeActive = false; // require a new match to start when re-enabled
-        hideGameOver();
-      } else {
-        // Re-enabled: wait for first successful match to start
-        // no immediate start here to honor the rule
-      }
-      refresh();
-    });
-  }
+  // --- Life toggle ---
+  // Life toggle removed; life visibility follows Game Mode
 
   // --- Debug UI ---
   function setupDebugUI() {
@@ -345,16 +369,155 @@
     lifeMeterEl.style.width = w + 'px';
   }
 
+  // --- Game Mode (isolated) ---
+  function setupColorGameModeMenu() {
+    if (!cmModeToggleBtn || !cmModeMenuEl) return;
+    const openMenu = (open) => {
+      cmModeMenuEl.classList.toggle('open', open);
+      cmModeMenuEl.hidden = !open;
+      cmModeToggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    let isOpen = false;
+    cmModeToggleBtn.addEventListener('click', () => { isOpen = !isOpen; openMenu(isOpen); });
+    document.addEventListener('click', (e) => {
+      if (!isOpen) return;
+      if (!cmModeMenuEl.contains(e.target) && e.target !== cmModeToggleBtn) { isOpen = false; openMenu(false); }
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { isOpen = false; openMenu(false); } });
+    cmModeMenuEl.querySelectorAll('.cm-mode-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const m = btn.getAttribute('data-mode');
+        if (m) setGameModeIsolated(m);
+        isOpen = false; openMenu(false);
+      });
+    });
+  }
+
+  function setGameModeIsolated(mode) {
+    if (mode !== 'off' && mode !== 'life' && mode !== 'color') return;
+    if (gameMode === mode) { applyGameModeUI(); return; }
+    gameMode = mode;
+    if (mode === 'off') {
+      // Disable life system and color engine
+      lifeSystemEnabled = false;
+      stopLifeDecayTimer();
+      lost = false;
+      lifeActive = false;
+      hideGameOver();
+      colorState.roundOver = false; hideRoundWinOverlay_color();
+      activeEngine = baseEngine;
+    } else if (mode === 'life') {
+      // Base engine + life enabled
+      activeEngine = baseEngine;
+      lifeSystemEnabled = true;
+      colorState.roundOver = false; hideRoundWinOverlay_color();
+      // life starts on first successful match; just show UI
+    } else if (mode === 'color') {
+      // Activate color engine and hide life UI
+      lifeSystemEnabled = false;
+      stopLifeDecayTimer();
+      lost = false;
+      lifeActive = false;
+      hideGameOver();
+      initColorModeState();
+      activeEngine = colorEngine;
+    }
+    applyGameModeUI();
+  }
+
+  function applyGameModeUI() {
+    // Update Mode toggle label
+    if (cmModeToggleBtn) cmModeToggleBtn.textContent = `Game Mode: ${gameMode[0].toUpperCase()}${gameMode.slice(1)}`;
+    // Life UI visibility
+    if (lifeWrapEl) lifeWrapEl.style.display = lifeSystemEnabled ? '' : 'none';
+    // Steps & Score visibility
+    if (cmStepsEl) cmStepsEl.style.display = (gameMode === 'color') ? '' : 'none';
+    if (scoreBoxEl) scoreBoxEl.style.display = (gameMode === 'color') ? 'none' : '';
+    if (cmStepsCountEl) cmStepsCountEl.textContent = String(colorState.steps || 0);
+    // Goal indicator in Color Mode
+    if (cmGoalIndicatorEl && cmGoalDotEl && cmGoalNameEl) {
+      if (gameMode === 'color') {
+        const nameIdx = colorState.goalColorIdx;
+        const name = getColorLabelForIndex(nameIdx);
+        cmGoalNameEl.textContent = name;
+        cmGoalDotEl.className = 'cm-dot ' + (COLOR_NAMES[colorState.goalColorIdx] || '');
+        cmGoalIndicatorEl.style.display = '';
+      } else {
+        cmGoalIndicatorEl.style.display = 'none';
+      }
+    }
+    // Rules text under board with subtle fade
+    updateRulesBlurbWithFade();
+    // Ensure round win overlay is hidden if not in Color mode
+    if (gameMode !== 'color') hideRoundWinOverlay_color();
+    // No life toggle; life UI visibility is handled above
+  }
+
+  function ruleTextForMode(mode) {
+    if (mode === 'color') return 'Transform the entire board into the designated Goal Color!';
+    if (mode === 'life') return 'Every successful match keeps you alive and scoring!';
+    return 'Drag tiles and keep swapping to create more matches!';
+  }
+
+  function updateRulesBlurbWithFade() {
+    if (!cmRulesEl) return;
+    const next = ruleTextForMode(gameMode);
+    const current = cmRulesEl.textContent || '';
+    // If identical or initially empty, update without fade
+    if (current.trim() === next.trim()) return;
+    if (current.trim() === '') {
+      cmRulesEl.textContent = next;
+      cmRulesEl.style.opacity = '1';
+      return;
+    }
+    // Fade out, swap text, then fade in
+    cmRulesEl.style.opacity = '0';
+    setTimeout(() => {
+      cmRulesEl.textContent = next;
+      // force reflow then fade in
+      void cmRulesEl.offsetWidth;
+      cmRulesEl.style.opacity = '1';
+    }, 120);
+  }
+
+  function initColorModeState() {
+    colorState.steps = 0;
+    colorState.goalColorIdx = pickGoalColorIndexFromBoard_color(board);
+    colorState.bannedColors.clear();
+    // Seed a fresh board for Color Mode start with exactly 5 goal tiles
+    board = seedBoard_color(SIZE);
+    draw();
+    refreshBannedColorsFromBoard_color(board);
+    colorState.roundOver = false;
+    hideRoundWinOverlay_color();
+  }
+
+  function capitalize(s) { return s ? (s[0].toUpperCase() + s.slice(1)) : s; }
+  function getColorLabelForIndex(idx) {
+    const name = COLOR_NAMES[idx] || '';
+    switch (name) {
+      case 'red': return 'brown';
+      case 'pink': return 'pink';
+      case 'yellow': return 'white';
+      case 'green': return 'mint blue';
+      case 'blue': return 'turquoise';
+      case 'orange': return 'orange';
+      default: return capitalize(name);
+    }
+  }
   // --- Input handlers ---
   function onPointerDown(e) {
     const tile = e.target.closest(".tile");
     if (!tile) return;
+    if (gameMode === 'color' && colorState.roundOver) return; // block input during round win
     // Visual press feedback (independent of gameplay state)
     if (pressedEl && pressedEl !== tile) pressedEl.classList.remove("pressed");
     tile.classList.add("pressed");
     pressedEl = tile;
     if (lost || reverting || animatingCascade) return;
     e.preventDefault();
+    // Capture pointer so we keep getting move events while dragging on mobile Safari
+    try { tile.setPointerCapture && tile.setPointerCapture(e.pointerId); } catch (_) {}
     const r = parseInt(tile.dataset.r, 10);
     const c = parseInt(tile.dataset.c, 10);
     dragging = true;
@@ -364,6 +527,32 @@
     boardEl.classList.add("dragging");
     refreshTrail();
     updateGlowPreview();
+  }
+
+  // Map finger/mouse movement to the tile under the pointer for touch devices
+  function onPointerMove(e) {
+    if (!dragging) return;
+    // Prevent page scrolling while dragging
+    if (e.cancelable) e.preventDefault();
+    let tile = null;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (el) tile = el.closest && el.closest('.tile');
+    if (!tile || !boardEl.contains(tile)) {
+      // Fallback: hit-test against known tile rects (works even if originals are visibility:hidden)
+      outer: for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+          const t = tileEls[r][c];
+          if (!t) continue;
+          const rr = t.getBoundingClientRect();
+          if (e.clientX >= rr.left && e.clientX <= rr.right && e.clientY >= rr.top && e.clientY <= rr.bottom) {
+            tile = t; break outer;
+          }
+        }
+      }
+      if (!tile || !boardEl.contains(tile)) return;
+    }
+    // Reuse the same logic as hover-enter
+    onTileEnter({ target: tile });
   }
 
   // Clear any pressed visuals
@@ -428,21 +617,29 @@
     clearTrail();
     clearGlowPreview();
 
-    // Check for any matches
-    const anyCleared = await resolveMatchesAndCascades();
+    // Check for any matches (engine hook)
+    const anyCleared = await (activeEngine && activeEngine.resolve ? activeEngine.resolve() : resolveMatchesAndCascades());
     if (anyCleared === 0) {
       // No match -> visually roll back along the path
       reverting = true;
-      // Apply penalty for failed move only if life has started
-      if (lifeSystemEnabled && lifeActive) addLife(-NO_MATCH_PENALTY);
       const savedPath = path.slice();
+      // Apply penalty only if at least one swap actually occurred
+      const didSwap = savedPath.length > 1;
+      if (didSwap && lifeSystemEnabled && lifeActive) addLife(-NO_MATCH_PENALTY);
+      // Color Mode: failed move counts as 2 steps (only if an actual swap occurred)
+      if (gameMode === 'color' && didSwap) {
+        colorState.steps += 2;
+        if (cmStepsCountEl) cmStepsCountEl.textContent = String(colorState.steps);
+      }
       const savedStart = startPos ? { r: startPos.r, c: startPos.c } : null;
       (async () => {
         try {
           await swapAnimChain.catch(() => {});
-          await animateRevertPath(savedPath);
+          if (didSwap) {
+            await animateRevertPath(savedPath);
+          }
           draw();
-          if (savedStart) {
+          if (didSwap && savedStart) {
             const el = tileEls[savedStart.r][savedStart.c];
             el.classList.add("shake");
             setTimeout(() => el.classList.remove("shake"), 320);
@@ -459,8 +656,15 @@
       path = [];
       pathSet.clear();
       startPos = null;
+      // Color Mode bookkeeping
+      if (gameMode === 'color') {
+        colorState.steps += 1;
+        if (cmStepsCountEl) cmStepsCountEl.textContent = String(colorState.steps);
+        await postColorModeAfterCascades();
+      }
     }
   }
+
 
   // --- Board logic ---
   function createInitialBoard(n) {
@@ -819,7 +1023,8 @@
   function updateGlowPreview() {
     // Rule: show breathing glow only when there's no tile swapping
     if (!dragging || activeSwaps > 0) { clearGlowPreview(); return; }
-    const seeds = findMatches(board);
+    // In Color Mode, ignore goal color matches in the preview
+    const seeds = (gameMode === 'color') ? findMatches_color(board) : findMatches(board);
     const nextSet = new Set();
     if (seeds.length > 0) {
       const full = expandConnectedSameColor(board, seeds);
@@ -1212,6 +1417,419 @@
     scoreEl.textContent = String(score);
   }
 
+  // ===================
+  // Isolated Color Mode
+  // ===================
+  const colorEngine = { resolve: resolveMatchesAndCascades_color };
+
+  async function resolveMatchesAndCascades_color() {
+    let matchCount = 0;
+    animatingCascade = true;
+    try {
+      await swapAnimChain.catch(() => {});
+      while (true) {
+        const matches = findMatches_color(board);
+        if (matches.length === 0) break;
+
+        const toClear = expandConnectedSameColor(board, matches);
+        // Special rule: only one non-goal color remains and this move wouldn't clear all of it
+        {
+          const remainingColors = distinctNonGoalColors_color(board);
+          if (remainingColors.length === 1) {
+            const rem = remainingColors[0];
+            const totalRem = countColorOnBoard_color(board, rem);
+            let clearRem = 0;
+            for (const { r, c } of toClear) if (board[r][c] === rem) clearRem++;
+            if (clearRem > 0 && clearRem < totalRem) {
+              await shuffleWholeBoardWithFade_color();
+              refreshBannedColorsFromBoard_color(board);
+              draw();
+              matchCount = 1; // signal handled success
+              break;
+            }
+          }
+        }
+        matchCount += countClearClusters(board, toClear);
+
+        const boardBefore = debugEnabled ? cloneBoard(board) : null;
+        // Fade out matched tiles
+        for (const { r, c } of toClear) {
+          const el = tileEls[r][c];
+          if (el) el.classList.add("clearing");
+        }
+        await new Promise((res) => setTimeout(res, CLEAR_MS));
+        for (const { r, c } of toClear) {
+          const el = tileEls[r][c];
+          if (el) el.classList.remove("clearing");
+        }
+
+        // Clear snapshot
+        const snapshot = board.map((row) => row.slice());
+        for (const { r, c } of toClear) snapshot[r][c] = null;
+        const boardAfterClear = debugEnabled ? cloneBoard(snapshot) : null;
+
+        // Color-mode gravity plan with weighted spawns and banning
+        const plan = computeGravityPlan_color(snapshot);
+
+        // Underlay commit, animate, then next board
+        board = snapshot;
+        draw();
+        await animateFallAndRefill(plan, snapshot);
+        board = plan.nextBoard;
+        draw();
+
+        // Update banned colors after this wave
+        refreshBannedColorsFromBoard_color(board);
+
+        if (debugEnabled) {
+          const boardAfterCollapse = cloneBoard(board);
+          logDebugAction(++debugActionCount, matches, toClear, boardBefore, boardAfterClear, boardAfterCollapse);
+        }
+      }
+    } finally {
+      animatingCascade = false;
+    }
+    // No score changes in color mode; Steps are handled by caller
+    draw();
+    return matchCount;
+  }
+
+  function findMatches_color(b) {
+    const n = b.length;
+    const mark = Array.from({ length: n }, () => Array(n).fill(false));
+    const goal = colorState.goalColorIdx;
+    // Horizontal
+    for (let r = 0; r < n; r++) {
+      let runLen = 1;
+      for (let c = 1; c < n; c++) {
+        if (b[r][c] === b[r][c - 1]) runLen++;
+        else {
+          if (runLen >= 3) {
+            const color = b[r][c - 1];
+            if (color !== goal) for (let k = 0; k < runLen; k++) mark[r][c - 1 - k] = true;
+          }
+          runLen = 1;
+        }
+      }
+      if (runLen >= 3) {
+        const color = b[r][n - 1];
+        if (color !== goal) for (let k = 0; k < runLen; k++) mark[r][n - 1 - k] = true;
+      }
+    }
+    // Vertical
+    for (let c = 0; c < n; c++) {
+      let runLen = 1;
+      for (let r = 1; r < n; r++) {
+        if (b[r][c] === b[r - 1][c]) runLen++;
+        else {
+          if (runLen >= 3) {
+            const color = b[r - 1][c];
+            if (color !== goal) for (let k = 0; k < runLen; k++) mark[r - 1 - k][c] = true;
+          }
+          runLen = 1;
+        }
+      }
+      if (runLen >= 3) {
+        const color = b[n - 1][c];
+        if (color !== goal) for (let k = 0; k < runLen; k++) mark[n - 1 - k][c] = true;
+      }
+    }
+    const matches = [];
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (mark[r][c]) matches.push({ r, c });
+    return matches;
+  }
+
+  function computeGravityPlan_color(snapshot) {
+    const n = SIZE;
+    const next = Array.from({ length: n }, () => Array(n).fill(null));
+    const survivors = [];
+    const spawns = [];
+    for (let c = 0; c < n; c++) {
+      const nonNull = [];
+      for (let r = n - 1; r >= 0; r--) {
+        const v = snapshot[r][c];
+        if (v !== null && v !== undefined) nonNull.push({ v, fromR: r });
+      }
+      let write = n - 1;
+      for (const item of nonNull) {
+        next[write][c] = item.v;
+        const rows = write - item.fromR;
+        if (rows > 0) survivors.push({ from: { r: item.fromR, c }, to: { r: write, c }, rows });
+        write--;
+      }
+      for (let r = write; r >= 0; r--) {
+        const color = pickSpawnColor_color(snapshot);
+        next[r][c] = color;
+        spawns.push({ to: { r, c }, rowsFromTop: r + 1, color });
+      }
+    }
+    return { nextBoard: next, survivors, spawns };
+  }
+
+  function pickSpawnColor_color(b) {
+    // Eligible non-goal colors: count > 0 and not banned
+    const counts = colorCounts_color(b);
+    const goal = colorState.goalColorIdx;
+    const elig = [];
+    for (let i = 0; i < counts.length; i++) {
+      if (i === goal) continue;
+      if (counts[i] > 0 && !colorState.bannedColors.has(i)) elig.push(i);
+    }
+    if (elig.length === 0) return goal;
+    const k = Math.random();
+    if (k < 0.10) return goal;
+    return elig[Math.floor(Math.random() * elig.length)];
+  }
+  function distinctNonGoalColors_color(b) {
+    const counts = colorCounts_color(b);
+    const goal = colorState.goalColorIdx;
+    const out = [];
+    for (let i = 0; i < counts.length; i++) if (i !== goal && counts[i] > 0) out.push(i);
+    return out;
+  }
+  function countColorOnBoard_color(b, colorIdx) {
+    let n = 0; for (let r=0; r<b.length; r++) for (let c=0; c<b.length; c++) if (b[r][c] === colorIdx) n++; return n;
+  }
+
+  function colorCounts_color(b) {
+    const counts = Array(COLOR_NAMES.length).fill(0);
+    for (let r = 0; r < b.length; r++) {
+      for (let c = 0; c < b.length; c++) {
+        const v = b[r][c];
+        if (v !== null && v !== undefined) counts[v]++;
+      }
+    }
+    return counts;
+  }
+  function refreshBannedColorsFromBoard_color(b) {
+    const counts = colorCounts_color(b);
+    colorState.bannedColors.clear();
+    for (let i = 0; i < counts.length; i++) {
+      if (i === colorState.goalColorIdx) continue;
+      if (counts[i] === 0) colorState.bannedColors.add(i);
+    }
+  }
+  function pickGoalColorIndexFromBoard_color(b) {
+    const counts = colorCounts_color(b);
+    const present = [];
+    for (let i = 0; i < counts.length; i++) if (counts[i] > 0) present.push(i);
+    if (present.length === 0) return Math.floor(Math.random() * COLOR_NAMES.length);
+    return present[Math.floor(Math.random() * present.length)];
+  }
+
+  async function postColorModeAfterCascades() {
+    // Win: all tiles equal goal color
+    if (isAllGoal_color(board)) {
+      // Round over: fade out all tiles, clear board, and show win overlay
+      await fadeOutAllTiles_color();
+      clearBoardToEmpty_color();
+      colorState.roundOver = true;
+      showRoundWinOverlay_color();
+      return;
+    }
+    // Loss: no non-goal color has >= 3 tiles
+    if (!hasAnyNonGoalWithAtLeast3_color(board)) {
+      lost = true;
+      showGameOver('No Moves — You Lose', 'No non-goal color has 3+ tiles, so no matches are possible.');
+      return;
+    }
+    // Stalemate: ensure at least one single-swap solution by shuffling non-goal tiles (with fade on non-goal)
+    if (!hasSingleSwapSolution_color(board)) {
+      await shuffleNonGoalTilesEnsureSolvable_color();
+      draw();
+    }
+  }
+  function isAllGoal_color(b) {
+    const goal = colorState.goalColorIdx;
+    for (let r = 0; r < b.length; r++) for (let c = 0; c < b.length; c++) if (b[r][c] !== goal) return false;
+    return true;
+  }
+  async function fadeOutAllTiles_color() {
+    try {
+      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+        const el = tileEls[r][c]; if (el) el.classList.add('clearing');
+      }
+      await new Promise(res => setTimeout(res, CLEAR_MS));
+    } finally {
+      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+        const el = tileEls[r][c]; if (el) el.classList.remove('clearing');
+      }
+    }
+  }
+  function clearBoardToEmpty_color() {
+    const n = SIZE;
+    const b = Array.from({ length: n }, () => Array(n).fill(null));
+    board = b;
+    draw();
+  }
+  function pickDifferentGoalIndex_color(current) {
+    const total = COLOR_NAMES.length;
+    const idxs = [];
+    for (let i = 0; i < total; i++) if (i !== current) idxs.push(i);
+    return idxs[Math.floor(Math.random() * idxs.length)];
+  }
+
+  function ensureRoundWinOverlay_color() {
+    if (cmRoundWinEl && cmRoundWinEl.isConnected) return cmRoundWinEl;
+    cmRoundWinEl = document.createElement('div');
+    cmRoundWinEl.className = 'cm-round-win';
+    cmRoundWinEl.innerHTML = `
+      <div class="card">
+        <h2>You Win!</h2>
+        <div class="actions"><button id="cm-try-again" class="btn" type="button">Try Again</button></div>
+      </div>
+    `;
+    boardEl.appendChild(cmRoundWinEl);
+    const btn = cmRoundWinEl.querySelector('#cm-try-again');
+    if (btn) btn.addEventListener('click', () => startNewColorRound());
+    return cmRoundWinEl;
+  }
+  function showRoundWinOverlay_color() {
+    const el = ensureRoundWinOverlay_color();
+    el.style.display = 'flex';
+  }
+  function hideRoundWinOverlay_color() {
+    if (cmRoundWinEl) cmRoundWinEl.style.display = 'none';
+  }
+
+  function startNewColorRound() {
+    // Pick new goal color different from previous
+    const prev = colorState.goalColorIdx;
+    colorState.goalColorIdx = pickDifferentGoalIndex_color(prev);
+    // Seed a fresh board (no starting matches) with weighted goal spawning
+    board = seedBoard_color(SIZE);
+    draw();
+    colorState.steps = 0;
+    if (cmStepsCountEl) cmStepsCountEl.textContent = '0';
+    colorState.bannedColors.clear();
+    refreshBannedColorsFromBoard_color(board);
+    colorState.roundOver = false;
+    hideRoundWinOverlay_color();
+    applyGameModeUI();
+  }
+
+  function seedBoard_color(n) {
+    const goal = colorState.goalColorIdx;
+    const b = Array.from({ length: n }, () => Array(n).fill(null));
+    // Choose exactly 5 distinct positions for goal color
+    const positions = [];
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) positions.push({ r, c });
+    for (let i = positions.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const tmp = positions[i]; positions[i] = positions[j]; positions[j] = tmp; }
+    const goalCount = Math.min(5, n * n);
+    for (let i = 0; i < goalCount; i++) {
+      const { r, c } = positions[i];
+      b[r][c] = goal;
+    }
+    // Fill remaining cells with non-goal colors, avoiding initial 3-runs of non-goal
+    const nonGoalIdxs = [];
+    for (let i = 0; i < COLOR_NAMES.length; i++) if (i !== goal) nonGoalIdxs.push(i);
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        if (b[r][c] !== null) continue; // already a goal tile
+        let guard = 0;
+        let t = nonGoalIdxs[Math.floor(Math.random() * nonGoalIdxs.length)];
+        while (
+          ((c >= 2 && t === b[r][c - 1] && t === b[r][c - 2]) ||
+           (r >= 2 && t === b[r - 1][c] && t === b[r - 2][c]))
+        ) {
+          t = nonGoalIdxs[Math.floor(Math.random() * nonGoalIdxs.length)];
+          if (++guard > 50) break;
+        }
+        b[r][c] = t;
+      }
+    }
+    return b;
+  }
+  function rngTile_initial_color() {
+    const goal = colorState.goalColorIdx;
+    const k = Math.random();
+    if (k < 0.10) return goal;
+    // pick among non-goal uniformly
+    const idxs = [];
+    for (let i = 0; i < COLOR_NAMES.length; i++) if (i !== goal) idxs.push(i);
+    return idxs[Math.floor(Math.random() * idxs.length)];
+  }
+  function hasAnyNonGoalWithAtLeast3_color(b) {
+    const counts = colorCounts_color(b);
+    const goal = colorState.goalColorIdx;
+    for (let i = 0; i < counts.length; i++) if (i !== goal && counts[i] >= 3) return true;
+    return false;
+  }
+  function hasSingleSwapSolution_color(b) {
+    const n = b.length; const dirs = [[1,0],[0,1]]; const copy = (src)=>src.map(row=>row.slice());
+    for (let r=0;r<n;r++) for (let c=0;c<n;c++) for (const [dr,dc] of dirs){ const nr=r+dr, nc=c+dc; if(nr>=n||nc>=n) continue; const bb=copy(b); const t=bb[r][c]; bb[r][c]=bb[nr][nc]; bb[nr][nc]=t; if (findMatches_color(bb).length>0) return true; }
+    return false;
+  }
+  async function shuffleNonGoalTilesEnsureSolvable_color() {
+    const goal = colorState.goalColorIdx; const n = SIZE;
+    const positions = []; const colors = [];
+    for (let r=0;r<n;r++) for (let c=0;c<n;c++) if (board[r][c] !== goal){ positions.push({r,c}); colors.push(board[r][c]); }
+    const copy=(src)=>src.map(row=>row.slice());
+    // Fade-out non-goal tiles
+    const SHUFFLE_FADE_MS = 200;
+    const outs = [];
+    for (const {r,c} of positions) {
+      const el = tileEls[r][c];
+      if (el) {
+        const anim = el.animate([{opacity:1},{opacity:0}], {duration: SHUFFLE_FADE_MS, easing:'ease-in', fill:'forwards'});
+        outs.push(anim.finished.catch(() => {}));
+      }
+    }
+    await Promise.allSettled(outs);
+    const fyShuffle=(arr)=>{ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } };
+    const tryFill = () => { const b2=copy(board); const pool=colors.slice(); fyShuffle(pool); for(let i=0;i<positions.length;i++){ const {r,c}=positions[i]; b2[r][c]=pool[i]; } return b2; };
+    for (let attempt=0; attempt<40; attempt++){ const b2=tryFill(); if (hasSingleSwapSolution_color(b2)) { board=b2; break; } }
+    if (!hasSingleSwapSolution_color(board)) {
+      // Constructive fallback
+      const counts=colorCounts_color(board); let target=-1; for(let i=0;i<counts.length;i++){ if(i!==goal && counts[i]>=3){ target=i; break; } }
+      if (target!==-1){ const b2=copy(board); const slots=[]; for(let c=0;c<n && slots.length<3;c++) if (b2[0][c]!==goal) slots.push({r:0,c}); if(slots.length<3){ outer: for(let r=0;r<n;r++){ const rowSlots=[]; for(let c=0;c<n;c++) if (b2[r][c]!==goal) rowSlots.push({r,c}); if(rowSlots.length>=3){ slots.splice(0,slots.length,...rowSlots.slice(0,3)); break outer; } } }
+        if (slots.length>=3){ const pool=colors.slice(); let have=pool.filter(v=>v===target).length; for(let i=0;i<pool.length && have<3;i++){ if(pool[i]!==goal && pool[i]!==target){ pool[i]=target; have++; } } for(let i=0;i<3;i++){ const {r,c}=slots[i]; b2[r][c]=target; }
+          const rest=positions.filter(p=>!(slots.find(s=>s.r===p.r && s.c===p.c))); let pi=0; for(const p of rest){ while(pi<pool.length && pool[pi]===undefined) pi++; if(pi<pool.length){ b2[p.r][p.c]=pool[pi++]; } }
+          if (hasSingleSwapSolution_color(b2)) { board=b2; }
+        }
+      }
+    }
+    // Apply the new board and fade-in non-goal tiles
+    draw();
+    const ins = [];
+    for (const {r,c} of positions) {
+      const el = tileEls[r][c];
+      if (el) {
+        el.style.opacity = 0;
+        const anim = el.animate([{opacity:0},{opacity:1}], {duration: SHUFFLE_FADE_MS, easing:'ease-out', fill:'forwards'});
+        ins.push(anim.finished.then(() => { el.style.opacity = ''; }).catch(() => { el.style.opacity=''; }));
+      }
+    }
+    await Promise.allSettled(ins);
+  }
+
+  async function shuffleWholeBoardWithFade_color() {
+    const SHUF_MS = 200;
+    // fade out all tiles
+    const outs = [];
+    for (let r=0;r<SIZE;r++) for (let c=0;c<SIZE;c++) {
+      const el = tileEls[r][c]; if (!el) continue;
+      const anim = el.animate([{opacity:1},{opacity:0}], {duration: SHUF_MS, easing:'ease-in', fill:'forwards'});
+      outs.push(anim.finished.catch(()=>{}));
+    }
+    await Promise.allSettled(outs);
+    // shuffle colors
+    const colors = [];
+    for (let r=0;r<SIZE;r++) for (let c=0;c<SIZE;c++) colors.push(board[r][c]);
+    for (let i=colors.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [colors[i],colors[j]]=[colors[j],colors[i]]; }
+    let k=0; for (let r=0;r<SIZE;r++) for (let c=0;c<SIZE;c++) board[r][c]=colors[k++];
+    draw();
+    // fade in
+    const ins = [];
+    for (let r=0;r<SIZE;r++) for (let c=0;c<SIZE;c++) {
+      const el = tileEls[r][c]; if (!el) continue;
+      el.style.opacity = 0;
+      const anim = el.animate([{opacity:0},{opacity:1}], {duration: SHUF_MS, easing:'ease-out', fill:'forwards'});
+      ins.push(anim.finished.then(()=>{ el.style.opacity=''; }).catch(()=>{ el.style.opacity=''; }));
+    }
+    await Promise.allSettled(ins);
+  }
+
   // --- Life helpers ---
   function setLife(v) {
     const nv = clamp(v, 0, LIFE_MAX);
@@ -1257,7 +1875,7 @@
     setLife(LIFE_MAX);
     restartLifeDecayTimer();
   }
-  function showGameOver() {
+  function showGameOver(titleText = 'Life depleted — Game Over', infoText = 'Press Reset to start again.') {
     let overlay = document.querySelector('.game-over');
     if (!overlay) {
       overlay = document.createElement('div');
@@ -1265,9 +1883,7 @@
       const card = document.createElement('div');
       card.className = 'card';
       const title = document.createElement('h2');
-      title.textContent = 'Life depleted — Game Over';
       const info = document.createElement('p');
-      info.textContent = 'Press Reset to start again.';
       const actions = document.createElement('div');
       actions.className = 'actions';
       const btn = document.createElement('button');
@@ -1281,6 +1897,10 @@
       overlay.appendChild(card);
       document.body.appendChild(overlay);
     }
+    const titleEl = overlay.querySelector('h2');
+    const infoEl = overlay.querySelector('p');
+    if (titleEl) titleEl.textContent = titleText;
+    if (infoEl) infoEl.textContent = infoText;
     overlay.style.display = 'flex';
   }
   function hideGameOver() {
