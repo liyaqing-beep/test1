@@ -25,6 +25,11 @@ A lightweight, self‑contained match‑3 web game with a 5×5 board. Drag to sn
 
 ## Controls
 - Drag: press on a tile and snake through orthogonally adjacent tiles (tile enlarges 15% while held)
+- Diagonal drags (between diagonal neighbors): routed as two swaps (horizontal first, then vertical)
+  1) bottom‑left → top‑right: right, then up
+  2) bottom‑right → top‑left: left, then up
+  3) top‑left → bottom‑right: right, then down
+  4) top‑right → bottom‑left: left, then down
 - Release: if any match exists, the move succeeds and cascades resolve; otherwise the move rolls back along the path
 - Reset: click Reset to re‑seed the board
 - Game Mode: Off / Life / Color (dropdown above the board; default: Off)
@@ -186,6 +191,7 @@ Mobile input parity
   - Fall/refill uses overlay clones so the grid remains stable; originals are hidden/unhidden with ref‑counts
   - Glow preview is drawn as a union halo overlay, starts bright, and is gated to display only when not swapping/falling; geometry recomputes each frame to align with the enlarged tile
 - Accessibility: tiles are focusable via pointer and labeled; pointer events used for fluid drag on desktop/mobile
+ - Diagonal drag routing: when dragging to a diagonal neighbor, the move is executed as two swaps by first moving horizontally toward the target cell, then vertically toward it; backtracking is preserved if the first hop equals the previous cell.
 
 ## License
 For demo purposes; no license specified.
