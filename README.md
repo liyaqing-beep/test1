@@ -27,11 +27,40 @@ A lightweight, self‑contained match‑3 web game with a 5×5 board. Drag to sn
 - Drag: press on a tile and snake through orthogonally adjacent tiles (tile enlarges 15% while held)
 - Release: if any match exists, the move succeeds and cascades resolve; otherwise the move rolls back along the path
 - Reset: click Reset to re‑seed the board
+- Game Mode: Off / Life / Color (dropdown above the board; default: Off)
 
-## Life Meter (Game Rule)
+## Game Modes
+
+- Off
+  - Drag tiles and keep swapping to create more matches!
+  - Score: +10 per cleared cluster (unchanged).
+
+- Life
+  - Every successful match keeps you alive and scoring!
+  - Life system behaves as described below; Score remains visible.
+
+- Color
+  - Goal: Transform the entire board into the designated Goal Color (goal tiles never clear).
+  - Steps replace Score in the HUD.
+    - Success move: +1 step; Failed move (with an actual swap): +2 steps.
+  - Start of round: exactly 5 Goal Color tiles are seeded on the board.
+  - Spawns: Goal 10%; remaining eligible colors share 90%. Non‑goal colors that reach 0 are permanently removed from spawns for the round.
+  - Glow: live glow preview ignores matches consisting solely of the Goal Color.
+  - Stalemate: if no single adjacent swap yields a match, non‑goal tiles shuffle (Goal tiles stay fixed) to ensure solvability.
+  - One‑color‑left rule: if only one non‑goal color remains and a move would not clear all of it, the whole board (including Goal tiles) shuffles instead of clearing; counts as +1 step.
+  - Win: when all tiles are the Goal Color, the board fades out and a “You Win!” modal appears with “Try Again”; pressing it picks a new Goal and reseeds a fresh round (with 5 Goal tiles).
+
+## HUD and UI
+- Game Mode: Dropdown (top, centered) with Off/Life/Color; default Off.
+- Score vs Steps: Score shows in Off/Life; Steps shows in Color (+1 success, +2 failed with a swap).
+- Life Bar: visible only in Life; hidden in Off/Color; starts after first successful match.
+- Goal Indicator: visible only in Color; shows a colored dot and label (red→brown, pink→pink, yellow→white, green→mint blue, blue→turquoise, orange→orange).
+- Rules Blurb: short mode-specific tip under the board with a subtle fade on mode changes.
+- Win Overlay (Color): centered “You Win!” with “Try Again”; reseeds a new round on click.
+
+## Life Meter (Game Mode: Life)
 - Purpose: Keep scoring as-is, survive by maintaining Life > 0.
-- Placement: The life bar shows above the board (matches board width) when enabled.
-- Toggle: A HUD button “Life: On/Off” enables or disables the life system. When Off, the life bar is hidden and there is no decay, gains, or penalties; when turned On again, the meter remains idle until your next successful match.
+- Placement: The life bar shows above the board (matches board width) when Life mode is selected.
 - Start: The meter is inactive until your first successful match; on that first match it starts at 60 life and decay begins.
 - Decay: −5 life per second (max 60). Decay ticks chain only after each drop (gains/penalties do not reset the next tick). Pauses while the tab is hidden.
 - Gains (apply per cascade wave, right after matched tiles fade out):
@@ -39,7 +68,7 @@ A lightweight, self‑contained match‑3 web game with a 5×5 board. Drag to sn
   - 6–7 tiles: +15 life per match
   - 8+ tiles: +30 life per match
   - Multi‑match bonus: if 2+ clusters clear in the same wave, double that wave’s total life gain
-- Penalty: A failed move (no match) costs −20 life, but only after the meter has started.
+- Penalty: A failed move (no match) costs −20 life, but only after the meter has started. No penalty if you didn’t actually swap any tile (tap without moving doesn’t count).
 - Boundaries: Life clamps to [0, 60]. Reaching 0 shows a Game Over overlay; press Reset to start again.
 
 ## Coordinate System
@@ -85,11 +114,64 @@ Behavior
 - `src/styles.css` — Styles, board/tiles, glow overlay, swap clone styles, debug styles
 - `src/main.js` — Game logic, drag‑snake input, swap animations, match finding + cascades, glow overlay, debug logging
 
-## Run Locally
+## Development & Local Hosting
 This is a static web app — no build step required.
-- Easiest: open `src/index.html` in a browser
-- Optional: serve the folder with any static file server (for consistent origin)
-  - Python: `python3 -m http.server` then visit `http://localhost:8000/src/`
+
+Quick start (terminal)
+- `make dev` — serves the repo root on your LAN (defaults to port 8000). The script prints both Local and Network URLs; open the Network URL on your iPhone.
+- Custom port: `make dev DEV_PORT=9000`
+
+Manual alternative
+- From the repo root: `python3 -m http.server 8000`
+- Visit `http://localhost:8000/src/` on the same machine, or `http://<your-mac-ip>:8000/src/` from your phone.
+
+Find your Mac IP
+- Wi‑Fi: `ipconfig getifaddr en0`
+- Default interface: `ipconfig getifaddr $(route -n get default | awk '/interface:/{print $2}')`
+
+Notes
+- Serve the repo root so both `src/` and `assets/` resolve.
+- iOS service workers require HTTPS; over plain HTTP the game runs fine but offline/PWA features are disabled.
+
+## iPhone Support
+The game is mobile‑friendly and now includes a PWA manifest and service worker so it can be added to the Home Screen and played full‑screen on iPhone.
+
+What’s included
+- iOS meta + manifest: `src/index.html:5` adds `viewport-fit=cover`, Apple meta, and links `src/manifest.webmanifest`.
+- Offline/install: a basic service worker `src/sw.js` caches core assets for offline play.
+- Mobile polish: responsive tile sizing and iOS touch tweaks in `src/styles.css`.
+
+Play on iPhone (as a website)
+- Host the repo (any static hosting over HTTPS), then open the URL in Safari on iPhone.
+- Tap the Share button → Add to Home Screen.
+- Launch from the Home Screen for a full‑screen experience.
+
+Local install to Home Screen
+- Serve from the repo root (so `src/` and `assets/` are siblings), e.g. `python3 -m http.server`.
+- Visit `http://<your-ip>:8000/src/` in Safari, then Add to Home Screen.
+
+Debugging on iPhone
+- Enable on iPhone: Settings → Safari → Advanced → Web Inspector → On.
+- Enable on Mac: Safari → Settings → Advanced → check “Show Develop menu in menu bar”.
+- Connect iPhone via USB, open the page on iPhone, then on Mac Safari: Develop → [Your iPhone] → select the page to view console, network, and elements.
+
+App Store (native wrapper) — optional
+- Use Capacitor to wrap the web app in a native shell:
+  1) `npm init -y && npm i -D @capacitor/cli && npm i @capacitor/core @capacitor/ios`
+  2) `npx cap init match3 com.example.match3 --web-dir=src`
+  3) `npx cap add ios`
+  4) `npx cap open ios` and configure signing, icons, orientations in Xcode.
+  5) Build/run on a device, then prepare for App Store submission.
+
+Notes for iOS
+- Icons: add `assets/icon-192.png`, `assets/icon-512.png`, and `assets/icon-180.png` (Apple touch icon). Update sizes as needed in `src/manifest.webmanifest` and the `<link rel="apple-touch-icon">` in `src/index.html:8`.
+- Safe areas: the layout uses `viewport-fit=cover` and respects notches via CSS safe‑area insets.
+- Gestures: the board has `touch-action: none` to prevent scroll/zoom while dragging.
+
+Mobile input parity
+- Touch drag now mirrors desktop behavior. We track `pointermove` globally, capture the pointer on press, and map finger position to the tile under your finger (with a fallback hit‑test when originals are temporarily hidden during animations).
+  - Pointer capture and move handler: `src/main.js:350`, `src/main.js:373`.
+  - Hit‑test fallback: `src/main.js:380`.
 
 ## Implementation Notes
 - Initial board generation avoids starting matches
