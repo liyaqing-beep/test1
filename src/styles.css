@@ -338,17 +338,6 @@ body {
   line-height: 1.2;
 }
 
-/* Mobile adjustments: fit board, avoid overlaps, keep desktop unchanged */
-@media (max-width: 480px), (max-height: 700px) {
-  .app { margin: 16px auto; padding: 0 10px; }
-  .hud { flex-wrap: wrap; row-gap: 6px; column-gap: 8px; justify-content: center; }
-  .score, .cm-steps, .cm-goal-indicator { font-size: 13px; }
-  .btn { padding: 7px 12px; font-size: 14px; }
-  :root { --gap: 8px; }
-  .board { padding: 10px; }
-  .cm-rules { font-size: 12px; max-width: 100%; }
-}
-
 /* Timing console (left side) */
 
 /* Timing Panel */
