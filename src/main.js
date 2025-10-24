@@ -71,6 +71,7 @@
   const DECAY_INTERVAL_MS = 1000; // 10 per second
   const NO_MATCH_PENALTY = 20;
   let lifeTimer = null;
+  let gameOverTimer = null; // delay before showing Game Over overlay
   let lifeActive = false; // meter starts only after first match
   let lost = false;
   let lifeSystemEnabled = false; // on/off toggle (default Off via Game Mode)
@@ -1892,7 +1893,7 @@
     const nv = clamp(v, 0, LIFE_MAX);
     life = nv;
     updateLifeUI();
-    if (life <= 0) {
+    if (life <= 0 && !lost) {
       onGameOver();
     }
   }
@@ -1925,7 +1926,12 @@
   function onGameOver() {
     lost = true;
     stopLifeDecayTimer();
-    showGameOver();
+    if (gameOverTimer) { clearTimeout(gameOverTimer); gameOverTimer = null; }
+    // Delay the Game Over overlay by 500ms for better UX
+    gameOverTimer = setTimeout(() => {
+      showGameOver();
+      gameOverTimer = null;
+    }, 500);
   }
   function startLife() {
     lifeActive = true;
@@ -1963,5 +1969,6 @@
   function hideGameOver() {
     const overlay = document.querySelector('.game-over');
     if (overlay) overlay.style.display = 'none';
+    if (gameOverTimer) { clearTimeout(gameOverTimer); gameOverTimer = null; }
   }
 })();
