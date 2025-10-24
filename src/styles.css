@@ -103,7 +103,7 @@ body {
 
 .main { display: grid; place-items: center; }
 /* Mode rules under board */
-.cm-rules { margin-top: 10px; font-size: 13px; color: #333; text-align: center; max-width: 480px; opacity: 1; transition: opacity 180ms ease; }
+.cm-rules { margin-top: 10px; font-size: 13px; color: #333; text-align: center; max-width: 480px; opacity: 1; transition: opacity 180ms ease; white-space: pre-line; }
 
 .life-container {
   display: grid;
