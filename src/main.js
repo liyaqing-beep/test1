@@ -156,6 +156,9 @@
   window.addEventListener("scroll", positionDebugUI, { passive: true });
   window.addEventListener("resize", positionTimingPanel);
   window.addEventListener("scroll", positionTimingPanel, { passive: true });
+  // Keep the Timing toggle positioned under the rules blurb
+  window.addEventListener("resize", positionTimingToggleBelowRules);
+  window.addEventListener("scroll", positionTimingToggleBelowRules, { passive: true });
   window.addEventListener('resize', positionLifeMeter);
   window.addEventListener('scroll', positionLifeMeter, { passive: true });
   document.addEventListener('visibilitychange', () => {
@@ -280,9 +283,11 @@
         timingPanelEl.style.display = visible ? 'block' : 'none';
         timingToggleEl.textContent = visible ? 'Hide Panel' : 'Show Panel';
         positionTimingPanel();
+        positionTimingToggleBelowRules();
       });
     }
     positionTimingPanel();
+    positionTimingToggleBelowRules();
   }
 
   function buildTimingPanelHtml() {
@@ -350,17 +355,25 @@
     const rect = boardEl.getBoundingClientRect();
     const margin = 16;
     const top = Math.max(8, Math.round(rect.top));
-    const toggleW = timingToggleEl ? (timingToggleEl.offsetWidth || 110) : 110;
-    let toggleLeft = Math.max(8, Math.round(rect.left - margin - toggleW));
-    if (timingToggleEl) {
-      timingToggleEl.style.left = toggleLeft + 'px';
-      timingToggleEl.style.top = top + 'px';
-    }
     const toggleHeight = 36;
     const panelW = timingPanelEl.offsetWidth || 320;
     const panelLeft = Math.max(8, Math.round(rect.left - margin - panelW));
     timingPanelEl.style.left = panelLeft + 'px';
     timingPanelEl.style.top = Math.round(top + toggleHeight + 8) + 'px';
+  }
+
+  // Position the Show Panel button under the rules blurb (fixed)
+  function positionTimingToggleBelowRules() {
+    if (!timingToggleEl) return;
+    // Prefer rules blurb as anchor; fall back to board
+    const anchor = (cmRulesEl && cmRulesEl.offsetParent !== null) ? cmRulesEl : boardEl;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const toggleW = timingToggleEl.offsetWidth || 110;
+    const left = Math.round(rect.left + rect.width / 2 - toggleW / 2);
+    const top = Math.round(rect.bottom + 8);
+    timingToggleEl.style.left = left + 'px';
+    timingToggleEl.style.top = top + 'px';
   }
 
   function positionLifeMeter() {
@@ -465,10 +478,11 @@
     const next = ruleTextForMode(gameMode);
     const current = cmRulesEl.textContent || '';
     // If identical or initially empty, update without fade
-    if (current.trim() === next.trim()) return;
+    if (current.trim() === next.trim()) { positionTimingToggleBelowRules(); return; }
     if (current.trim() === '') {
       cmRulesEl.textContent = next;
       cmRulesEl.style.opacity = '1';
+      positionTimingToggleBelowRules();
       return;
     }
     // Fade out, swap text, then fade in
@@ -478,6 +492,7 @@
       // force reflow then fade in
       void cmRulesEl.offsetWidth;
       cmRulesEl.style.opacity = '1';
+      positionTimingToggleBelowRules();
     }, 120);
   }
 
