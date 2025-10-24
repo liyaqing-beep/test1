@@ -74,7 +74,7 @@ A lightweight, self‑contained match‑3 web game with a 5×5 board. Drag to sn
   - 8+ tiles: +30 life per match
   - Multi‑match bonus: if 2+ clusters clear in the same wave, double that wave’s total life gain
 - Penalty: A failed move (no match) costs −20 life, but only after the meter has started. No penalty if you didn’t actually swap any tile (tap without moving doesn’t count).
-- Boundaries: Life clamps to [0, 60]. Reaching 0 shows a Game Over overlay; press Reset to start again.
+- Boundaries: Life clamps to [0, 60]. Grace: when Life reaches 0, a 0.5s window starts — if Life recovers above 0 before it ends (e.g., via a new match), Game Over is cancelled; otherwise the overlay appears. Press Reset to start again.
 
 ## Coordinate System
 - External/logical (x, y): origin at bottom‑left, 1‑based; `x` increases → right, `y` increases → up
