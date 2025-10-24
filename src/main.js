@@ -156,9 +156,9 @@
   window.addEventListener("scroll", positionDebugUI, { passive: true });
   window.addEventListener("resize", positionTimingPanel);
   window.addEventListener("scroll", positionTimingPanel, { passive: true });
-  // Keep the Timing toggle positioned under the rules blurb
-  window.addEventListener("resize", positionTimingToggleBelowRules);
-  window.addEventListener("scroll", positionTimingToggleBelowRules, { passive: true });
+  // Keep the toggles positioned under the rules blurb
+  window.addEventListener("resize", positionTogglesBelowRules);
+  window.addEventListener("scroll", positionTogglesBelowRules, { passive: true });
   window.addEventListener('resize', positionLifeMeter);
   window.addEventListener('scroll', positionLifeMeter, { passive: true });
   document.addEventListener('visibilitychange', () => {
@@ -229,6 +229,7 @@
       debugToggleEl.textContent = debugEnabled ? "Hide Debug" : "Show Debug";
       debugPanelEl.style.display = debugEnabled ? "block" : "none";
       positionDebugUI();
+      positionTogglesBelowRules();
     });
     if (debugClearEl) {
       debugClearEl.textContent = "Clear Logs";
@@ -239,28 +240,21 @@
       });
     }
     positionDebugUI();
+    positionTogglesBelowRules();
     updateClearButtonVisibility();
   }
 
   function positionDebugUI() {
     if (!debugToggleEl || !debugPanelEl) return;
-    const rect = boardEl.getBoundingClientRect();
-    const margin = 16;
-    const left = Math.round(rect.right + margin);
-    const top = Math.max(8, Math.round(rect.top));
-    debugToggleEl.style.left = left + "px";
-    debugToggleEl.style.top = top + "px";
-    // Place Clear button to the right of toggle
-    const gap = 8;
+    // Anchor panel under the debug toggle; Clear button next to toggle
+    const trect = debugToggleEl.getBoundingClientRect();
     if (debugClearEl) {
-      const toggleW = debugToggleEl.offsetWidth || 110;
-      debugClearEl.style.left = Math.round(left + toggleW + gap) + "px";
-      debugClearEl.style.top = top + "px";
+      const gap = 8;
+      debugClearEl.style.left = Math.round(trect.right + gap) + 'px';
+      debugClearEl.style.top = Math.round(trect.top) + 'px';
     }
-    // Panel under buttons aligned with left edge
-    const toggleHeight = 36;
-    debugPanelEl.style.left = left + "px";
-    debugPanelEl.style.top = Math.round(top + toggleHeight + 8) + "px";
+    debugPanelEl.style.left = Math.round(trect.left) + 'px';
+    debugPanelEl.style.top = Math.round(trect.bottom + 8) + 'px';
   }
 
   // --- Timing Panel ---
@@ -283,11 +277,11 @@
         timingPanelEl.style.display = visible ? 'block' : 'none';
         timingToggleEl.textContent = visible ? 'Hide Panel' : 'Show Panel';
         positionTimingPanel();
-        positionTimingToggleBelowRules();
+        positionTogglesBelowRules();
       });
     }
     positionTimingPanel();
-    positionTimingToggleBelowRules();
+    positionTogglesBelowRules();
   }
 
   function buildTimingPanelHtml() {
@@ -362,18 +356,43 @@
     timingPanelEl.style.top = Math.round(top + toggleHeight + 8) + 'px';
   }
 
-  // Position the Show Panel button under the rules blurb (fixed)
-  function positionTimingToggleBelowRules() {
-    if (!timingToggleEl) return;
+  // Position both toggles (Show Panel and Show Debug) under the rules blurb (fixed)
+  function positionTogglesBelowRules() {
+    const showPanel = timingToggleEl;
+    const showDebug = debugToggleEl;
     // Prefer rules blurb as anchor; fall back to board
     const anchor = (cmRulesEl && cmRulesEl.offsetParent !== null) ? cmRulesEl : boardEl;
     if (!anchor) return;
     const rect = anchor.getBoundingClientRect();
-    const toggleW = timingToggleEl.offsetWidth || 110;
-    const left = Math.round(rect.left + rect.width / 2 - toggleW / 2);
+    const gap = 10;
+    const w1 = showPanel ? (showPanel.offsetWidth || 110) : 0;
+    const w2 = showDebug ? (showDebug.offsetWidth || 110) : 0;
+    const total = (w1 > 0 && w2 > 0) ? (w1 + gap + w2) : (w1 || w2);
+    const leftStart = Math.round(rect.left + rect.width / 2 - total / 2);
     const top = Math.round(rect.bottom + 8);
-    timingToggleEl.style.left = left + 'px';
-    timingToggleEl.style.top = top + 'px';
+    if (showPanel && w1 > 0) {
+      showPanel.style.left = leftStart + 'px';
+      showPanel.style.top = top + 'px';
+    }
+    if (showDebug && w2 > 0) {
+      const left2 = (w1 > 0 && w2 > 0) ? (leftStart + w1 + gap) : leftStart;
+      showDebug.style.left = left2 + 'px';
+      showDebug.style.top = top + 'px';
+    }
+    // Place Clear Logs to the right of Show Debug
+    if (debugClearEl && showDebug) {
+      const trect = showDebug.getBoundingClientRect();
+      const gap2 = 8;
+      debugClearEl.style.left = Math.round(trect.right + gap2) + 'px';
+      debugClearEl.style.top = Math.round(trect.top) + 'px';
+    }
+    // Position debug panel below the Show Debug button (or below Show Panel if only that exists)
+    if (debugPanelEl && (showDebug || showPanel)) {
+      const anchorBtn = showDebug || showPanel;
+      const brect = anchorBtn.getBoundingClientRect();
+      debugPanelEl.style.left = Math.round(brect.left) + 'px';
+      debugPanelEl.style.top = Math.round(brect.bottom + 8) + 'px';
+    }
   }
 
   function positionLifeMeter() {
@@ -478,11 +497,11 @@
     const next = ruleTextForMode(gameMode);
     const current = cmRulesEl.textContent || '';
     // If identical or initially empty, update without fade
-    if (current.trim() === next.trim()) { positionTimingToggleBelowRules(); return; }
+    if (current.trim() === next.trim()) { positionTogglesBelowRules(); return; }
     if (current.trim() === '') {
       cmRulesEl.textContent = next;
       cmRulesEl.style.opacity = '1';
-      positionTimingToggleBelowRules();
+      positionTogglesBelowRules();
       return;
     }
     // Fade out, swap text, then fade in
@@ -492,7 +511,7 @@
       // force reflow then fade in
       void cmRulesEl.offsetWidth;
       cmRulesEl.style.opacity = '1';
-      positionTimingToggleBelowRules();
+      positionTogglesBelowRules();
     }, 120);
   }
 
