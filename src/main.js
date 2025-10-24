@@ -455,7 +455,7 @@
   }
 
   function ruleTextForMode(mode) {
-    if (mode === 'color') return '- Transform the entire board into the designated Goal Color!\n- *Goal color will not be matched';
+    if (mode === 'color') return 'Transform the entire board into the designated Goal Color!\n*Goal color will not be matched';
     if (mode === 'life') return 'Every successful match keeps you alive and scoring!';
     return 'Drag tiles and keep swapping to create more matches!';
   }
