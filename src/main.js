@@ -245,16 +245,23 @@
   }
 
   function positionDebugUI() {
-    if (!debugToggleEl || !debugPanelEl) return;
-    // Anchor panel under the debug toggle; Clear button next to toggle
-    const trect = debugToggleEl.getBoundingClientRect();
-    if (debugClearEl) {
+    if (!debugPanelEl) return;
+    // Keep Clear button next to the Debug toggle under the rules blurb
+    if (debugToggleEl && debugClearEl) {
+      const trect = debugToggleEl.getBoundingClientRect();
       const gap = 8;
       debugClearEl.style.left = Math.round(trect.right + gap) + 'px';
       debugClearEl.style.top = Math.round(trect.top) + 'px';
     }
-    debugPanelEl.style.left = Math.round(trect.left) + 'px';
-    debugPanelEl.style.top = Math.round(trect.bottom + 8) + 'px';
+    // Place the Debug panel to the right of the board (mirrors timing panel on the left)
+    const rect = boardEl.getBoundingClientRect();
+    const margin = 16;
+    const topBase = Math.max(8, Math.round(rect.top));
+    const toggleHeight = 36;
+    const panelTop = Math.round(topBase + toggleHeight + 8);
+    const panelLeft = Math.round(rect.right + margin);
+    debugPanelEl.style.left = panelLeft + 'px';
+    debugPanelEl.style.top = panelTop + 'px';
   }
 
   // --- Timing Panel ---
@@ -385,13 +392,6 @@
       const gap2 = 8;
       debugClearEl.style.left = Math.round(trect.right + gap2) + 'px';
       debugClearEl.style.top = Math.round(trect.top) + 'px';
-    }
-    // Position debug panel below the Show Debug button (or below Show Panel if only that exists)
-    if (debugPanelEl && (showDebug || showPanel)) {
-      const anchorBtn = showDebug || showPanel;
-      const brect = anchorBtn.getBoundingClientRect();
-      debugPanelEl.style.left = Math.round(brect.left) + 'px';
-      debugPanelEl.style.top = Math.round(brect.bottom + 8) + 'px';
     }
   }
 
