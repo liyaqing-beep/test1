@@ -1941,7 +1941,12 @@
       }
     } else {
       // Recovered above 0 during the grace window — cancel pending Game Over
+      const hadPending = !!gameOverTimer;
       if (gameOverTimer) { clearTimeout(gameOverTimer); gameOverTimer = null; }
+      // If we recovered from 0 and decay is not running, resume the decay cadence
+      if (hadPending && !lifeTimer && lifeSystemEnabled && lifeActive && !lost) {
+        restartLifeDecayTimer();
+      }
     }
   }
   function addLife(delta) {
