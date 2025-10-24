@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Block commits directly to protected branches (main/master).
+branch="$(git rev-parse --abbrev-ref HEAD)"
+if [[ "$branch" =~ ^(main|master)$ ]]; then
+  echo "Aborting commit: committing directly to '$branch' is blocked. Commit on a feature branch instead." >&2
+  echo "Override with: git commit --no-verify ... if you really mean it." >&2
+  exit 1
+fi
+
+exit 0
+
