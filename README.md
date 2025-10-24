@@ -101,13 +101,13 @@ Foldable controls for animation timing, mirrored on the left side of the board.
   - Collapse Base ms/row: base time per row for collapse. Default: 30.
 - Panel 3 — Swapping speed
   - Adjust clockwise/counter‑clockwise swap duration by ±ms relative to the base 90ms.
-  - Defaults: CW offset 0ms (90ms total), CCW offset +45ms (135ms total).
+  - Defaults: CW offset 0ms (90ms total), CCW offset +35ms (125ms total).
 - Apply / Reset: Apply changes or reset to defaults listed above.
 
 Defaults
 - Panel 1 — Above‑board offset: 0; Refill Base: 30 ms/row
 - Panel 2 — Collapse offset: 0; Collapse Base: 30 ms/row
-- Panel 3 — Swapping speed: CW offset 0 ms; CCW offset +45 ms
+- Panel 3 — Swapping speed: CW offset 0 ms; CCW offset +35 ms
 
 Behavior
 - Refills start from outside at y = 10 for each column x = 1..5 and are clipped until they enter the board area.

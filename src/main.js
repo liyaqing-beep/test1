@@ -34,7 +34,7 @@
     },
     swap: {
       cw_offset_ms: 0,   // additive ms to SWAP_MS for clockwise orbits
-      ccw_offset_ms: 45,  // additive ms to SWAP_MS for counter-clockwise orbits
+      ccw_offset_ms: 35,  // additive ms to SWAP_MS for counter-clockwise orbits
     },
   };
 
@@ -339,7 +339,7 @@
     speedConfig.refill.above_offset_ms = 0;
     speedConfig.collapse.inboard_offset_ms = 0;
     speedConfig.swap.cw_offset_ms = 0;
-    speedConfig.swap.ccw_offset_ms = 45;
+    speedConfig.swap.ccw_offset_ms = 35;
   }
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
