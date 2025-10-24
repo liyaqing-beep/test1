@@ -717,7 +717,7 @@
       const savedPath = path.slice();
       // Apply penalty only if at least one swap actually occurred
       const didSwap = savedPath.length > 1;
-      if (didSwap && lifeSystemEnabled && lifeActive) addLife(-NO_MATCH_PENALTY);
+      if (didSwap && lifeSystemEnabled && lifeActive && !lost) addLife(-NO_MATCH_PENALTY);
       // Color Mode: failed move counts as 2 steps (only if an actual swap occurred)
       if (gameMode === 'color' && didSwap) {
         colorState.steps += 2;
@@ -856,6 +856,7 @@
       // Ensure queued swap animations finished
       await swapAnimChain.catch(() => {});
       while (true) {
+        if (lost) break;
         const matches = findMatches(board);
         if (matches.length === 0) break;
 
@@ -877,7 +878,7 @@
         }
 
         // Ensure life system starts on first match, then apply life gains
-        if (lifeSystemEnabled && !lifeActive) startLife();
+        if (lifeSystemEnabled && !lifeActive && !lost) startLife();
         // Apply life gains for this wave after tiles disappeared
         const sizes = clusterSizesForClear(board, toClear);
         let lifeGain = 0;
@@ -888,7 +889,7 @@
         }
         // Double gain if multiple clusters matched in this wave
         if (sizes.length >= 2) lifeGain *= 2;
-        if (lifeSystemEnabled && lifeGain > 0) addLife(lifeGain);
+        if (lifeSystemEnabled && lifeGain > 0 && !lost) addLife(lifeGain);
 
         // Snapshot board after clear (without mutating original yet)
         const snapshot = board.map((row) => row.slice());
@@ -915,7 +916,7 @@
     } finally {
       animatingCascade = false;
     }
-    if (matchCount > 0) updateScore(score + matchCount * 10);
+    if (matchCount > 0 && !lost) updateScore(score + matchCount * 10);
     draw();
     return matchCount;
   }
