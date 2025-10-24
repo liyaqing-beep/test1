@@ -107,6 +107,8 @@
   setupTimingPanel();
   setupColorGameModeMenu();
   setGameModeIsolated('off');
+  // Responsive board sizing for mobile
+  setupResponsiveSizing();
 
   // Events
   resetBtn.addEventListener("click", () => {
@@ -368,6 +370,53 @@
     const rect = boardEl.getBoundingClientRect();
     const w = Math.max(0, Math.round(rect.width));
     lifeMeterEl.style.width = w + 'px';
+  }
+
+  // --- Responsive sizing ---
+  function setupResponsiveSizing() {
+    const apply = () => {
+      const smallScreen = (window.innerWidth <= 480) || (window.innerHeight <= 700);
+      if (!boardEl) return;
+      if (!smallScreen) {
+        // Use desktop defaults
+        document.documentElement.style.removeProperty('--tile-size');
+        positionLifeMeter();
+        positionTimingPanel();
+        return;
+      }
+      const appEl = document.querySelector('.app');
+      const header = document.querySelector('.topbar');
+      const rules = cmRulesEl;
+      const lifeVisible = (lifeWrapEl && lifeWrapEl.style.display !== 'none');
+      const lifeH = lifeVisible && lifeMeterEl ? (lifeWrapEl.getBoundingClientRect().height || 0) : 0;
+      const headerH = header ? (header.getBoundingClientRect().height || 0) : 0;
+      const rulesH = (rules && rules.offsetParent !== null) ? (rules.getBoundingClientRect().height || 0) : 0;
+      const availW = appEl ? appEl.clientWidth : window.innerWidth;
+      const reserved = 24; // extra vertical breathing room
+      const availH = Math.max(120, window.innerHeight - headerH - lifeH - rulesH - reserved);
+
+      const rootStyles = getComputedStyle(document.documentElement);
+      const gap = parseFloat(rootStyles.getPropertyValue('--gap')) || 10;
+      const bs = getComputedStyle(boardEl);
+      const padX = (parseFloat(bs.paddingLeft) || 0) + (parseFloat(bs.paddingRight) || 0);
+      const padY = (parseFloat(bs.paddingTop) || 0) + (parseFloat(bs.paddingBottom) || 0);
+      const n = SIZE;
+      const chromeX = padX + gap * (n - 1);
+      const chromeY = padY + gap * (n - 1);
+      const tileFromW = (availW - chromeX) / n;
+      const tileFromH = (availH - chromeY) / n;
+      let tile = Math.floor(Math.min(tileFromW, tileFromH));
+      // Comfortable tap target and sane upper bound
+      tile = Math.max(44, Math.min(tile, 96));
+      document.documentElement.style.setProperty('--tile-size', tile + 'px');
+      // Reposition dependent UI
+      positionLifeMeter();
+      positionTimingPanel();
+    };
+    let rafId = null;
+    const onResize = () => { if (rafId) cancelAnimationFrame(rafId); rafId = requestAnimationFrame(apply); };
+    window.addEventListener('resize', onResize, { passive: true });
+    apply();
   }
 
   // --- Game Mode (isolated) ---
