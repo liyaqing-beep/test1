@@ -1893,8 +1893,21 @@
     const nv = clamp(v, 0, LIFE_MAX);
     life = nv;
     updateLifeUI();
-    if (life <= 0 && !lost) {
-      onGameOver();
+    // Grace window: when life hits 0, start a 500ms timer. If life recovers before it fires, cancel.
+    if (life <= 0) {
+      if (!gameOverTimer && lifeSystemEnabled) {
+        gameOverTimer = setTimeout(() => {
+          if (life <= 0 && lifeSystemEnabled && !lost) {
+            lost = true;
+            stopLifeDecayTimer();
+            showGameOver();
+          }
+          gameOverTimer = null;
+        }, 500);
+      }
+    } else {
+      // Recovered above 0 during the grace window — cancel pending Game Over
+      if (gameOverTimer) { clearTimeout(gameOverTimer); gameOverTimer = null; }
     }
   }
   function addLife(delta) {
@@ -1924,14 +1937,12 @@
     }
   }
   function onGameOver() {
-    lost = true;
-    stopLifeDecayTimer();
-    if (gameOverTimer) { clearTimeout(gameOverTimer); gameOverTimer = null; }
-    // Delay the Game Over overlay by 500ms for better UX
-    gameOverTimer = setTimeout(() => {
+    // Unused in grace flow; kept for potential direct triggers
+    if (!lost) {
+      lost = true;
+      stopLifeDecayTimer();
       showGameOver();
-      gameOverTimer = null;
-    }, 500);
+    }
   }
   function startLife() {
     lifeActive = true;
