@@ -1944,8 +1944,8 @@
       // Recovered above 0 during the grace window — cancel pending Game Over
       const hadPending = !!gameOverTimer;
       if (gameOverTimer) { clearTimeout(gameOverTimer); gameOverTimer = null; }
-      // If we recovered from 0 and decay is not running, resume the decay cadence
-      if (hadPending && !lifeTimer && lifeSystemEnabled && lifeActive && !lost) {
+      // If we recovered from 0, resume the decay cadence immediately from the new life value
+      if (hadPending && lifeSystemEnabled && lifeActive && !lost) {
         restartLifeDecayTimer();
       }
     }
@@ -1964,6 +1964,8 @@
     stopLifeDecayTimer();
     if (lost || !lifeActive) return;
     lifeTimer = setTimeout(() => {
+      // Clear handle so recovery during grace can detect no active decay timer
+      lifeTimer = null;
       if (life > 0) {
         setLife(life - DECAY_STEP);
       }
